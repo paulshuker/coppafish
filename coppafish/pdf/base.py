@@ -5,10 +5,12 @@ import numpy as np
 from tqdm import tqdm
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from scipy import ndimage
 from matplotlib.backends.backend_pdf import PdfPages
 from typing import Union, Optional, Tuple
 
 from ..setup import Notebook, NotebookPage
+from ..utils import tiles_io
 from .. import logging
 
 
@@ -29,7 +31,7 @@ class BuildPDF:
         self,
         nb: Union[Notebook, str],
         output_dir: Optional[str] = None,
-        auto_open: bool = True,
+        auto_open: bool = False,
     ) -> None:
         """
         Build a diagnostic PDF of coppafish results for each relevant section. A section pdf is not re-generated if the
@@ -41,7 +43,7 @@ class BuildPDF:
             auto_open (bool, optional): open the PDF in a web browser after creation. Default: true.
         """
         logging.debug("Creating diagnostic PDF started")
-        pbar = tqdm(desc="Creating Diagnostic PDF", total=10, unit="section")
+        pbar = tqdm(desc="Creating Diagnostic PDFs", total=9, unit="section")
         pbar.set_postfix_str("Loading notebook")
         if isinstance(nb, str):
             nb = Notebook(nb)
@@ -86,23 +88,6 @@ class BuildPDF:
                 plt.close(fig)
         pbar.update()
 
-        if not os.path.isfile(os.path.join(output_dir, "_scale.pdf")) and nb.has_page("scale"):
-            with PdfPages(os.path.join(output_dir, "_scale.pdf")) as pdf:
-                pbar.set_postfix_str("Scale")
-                if nb.has_page("scale"):
-                    text_scale_info = "Scale\n \n"
-                    text_scale_info += self.get_version_from_page(nb.scale)
-                    text_scale_info += f"computed scale: {nb.scale.scale}\n"
-                    text_scale_info += f"computed anchor scale: {nb.scale.scale_anchor}\n"
-                    plt.figure(figsize=A4_SIZE_INCHES, frameon=False)
-                    fig, axes = self.create_empty_page(1, 1)
-                    self.empty_plot_ticks(axes)
-                    axes[0, 0].set_title(text_scale_info, fontdict=INFO_FONTDICT, y=0.5)
-                    # Saves the current figure onto a new pdf page
-                    pdf.savefig(fig)
-                    plt.close(fig)
-        pbar.update()
-
         if not os.path.isfile(os.path.join(output_dir, "_extract.pdf")) and nb.has_page("extract"):
             with PdfPages(os.path.join(output_dir, "_extract.pdf")) as pdf:
                 # Extract section
@@ -112,7 +97,7 @@ class BuildPDF:
                     text_extract_info = ""
                     text_extract_info += self.get_extract_text_info(nb.extract)
                     axes[0, 0].set_title(text_extract_info, fontdict=INFO_FONTDICT, y=0.5)
-                    extract_image_dtype = np.uint16
+                    extract_image_dtype = tiles_io.IMAGE_SAVE_DTYPE
                     self.empty_plot_ticks(axes[0, 0])
                     pdf.savefig(fig)
                     plt.close(fig)
@@ -158,7 +143,7 @@ class BuildPDF:
                     pdf.savefig(fig)
                     plt.close(fig)
 
-                    filter_image_dtype = np.uint16
+                    filter_image_dtype = tiles_io.IMAGE_SAVE_DTYPE
                     file_path = os.path.join(nb.file_names.tile_dir, "hist_counts_values.npz")
                     filter_pixel_unique_counts, filter_pixel_unique_values = None, None
                     if os.path.isfile(file_path):
@@ -175,6 +160,7 @@ class BuildPDF:
                             pixel_min,
                             pixel_max,
                             bin_size=2**10,
+                            auto_thresh_values=nb.filter.auto_thresh,
                         )
                         for fig in figs:
                             pdf.savefig(fig)
@@ -245,7 +231,6 @@ class BuildPDF:
         pbar.update()
 
         pbar.set_postfix_str("Register")
-        # TODO: Display registration images from the output_dir/reg_images directory, one page for each tile
         pbar.update()
 
         pbar.set_postfix_str("Stitch")
@@ -468,9 +453,10 @@ class BuildPDF:
             output += time_taken
         if filter_debug_page.r_dapi is not None:
             # Filtering DAPI is true
-            output += f"dapi filtering with r_dapi: {filter_debug_page.r_dapi}"
+            output += f"dapi filtering with r_dapi: {filter_debug_page.r_dapi}\n"
         else:
-            output += f"no dapi filtering"
+            output += f"no dapi filtering\n"
+        output += f"computed image scale: {filter_page.image_scale}"
         return output
 
     def create_pixel_value_hists(
@@ -483,6 +469,7 @@ class BuildPDF:
         pixel_max: int,
         bin_size: int,
         log_count: bool = True,
+        auto_thresh_values: np.ndarray = None,
     ) -> list:
         assert bin_size >= 1
         assert (pixel_max - pixel_min + 1) % bin_size == 0
@@ -503,6 +490,9 @@ class BuildPDF:
         use_rounds_all = list(set(use_rounds_all))
         use_rounds_all.sort()
         final_round = use_rounds_all[-1]
+        greatest_possible_y = nb.basic_info.tile_sz * nb.basic_info.tile_sz * len(nb.basic_info.use_z)
+        if log_count:
+            greatest_possible_y = np.log2(greatest_possible_y)
         for t in nb.basic_info.use_tiles:
             fig, axes = self.create_empty_page(
                 nrows=len(use_rounds_all),
@@ -516,7 +506,6 @@ class BuildPDF:
                 f"{section_name} {' log of ' if log_count else ''} pixel values, {t=}",
                 fontsize=SMALL_FONTSIZE,
             )
-            greatest_count = 0
             for i, r in enumerate(use_rounds_all):
                 if r == nb.basic_info.anchor_round:
                     use_channels_r = self.use_channels_anchor
@@ -554,10 +543,25 @@ class BuildPDF:
                     if np.sum(hist_x) <= 0:
                         logging.warn(f"The {section_name.lower()} image for {t=}, {r=}, {c=} looks to be all zeroes!")
                         continue
-                    if np.max(hist_x) > greatest_count:
-                        greatest_count = np.max(hist_x)
                     ax.bar(x=hist_loc, height=hist_x, color="red", width=bin_size)
                     ax.set_xlim(pixel_min, pixel_max)
+                    if "filter" in section_name.lower():
+                        ax.vlines(
+                            nb.basic_info.tile_pixel_value_shift,
+                            0,
+                            greatest_possible_y,
+                            linestyles="solid",
+                            colors="black",
+                            linewidths=0.75,
+                        )
+                    # Vertical line at the auto thresh value, i.e. the detecting spots threshold
+                    if auto_thresh_values is not None:
+                        ax.vlines(
+                            auto_thresh_values[t, r, c] + nb.basic_info.tile_pixel_value_shift,
+                            0,
+                            greatest_possible_y,
+                            linestyles="dotted",
+                        )
                     # Axis labelling and ticks
                     if c == first_channel:
                         round_label = str(r)
@@ -576,8 +580,8 @@ class BuildPDF:
                             fontdict={"fontsize": SMALL_FONTSIZE},
                         )
                         ax.set_xticks([pixel_min, pixel_max])
-            ax.set_ylim([0, greatest_count])
             figures.append(fig)
+            ax.set_ylim([0, greatest_possible_y])
         return figures
 
     def get_find_spots_info(self, find_spots_page: NotebookPage) -> str:

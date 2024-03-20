@@ -221,7 +221,7 @@ class view_codes(ColorPlotBase):
             page_name = 'omp'
             t = nb.omp.tile[spot_no]
             config = nb.get_config()['thresholds']
-            spot_score = omp_spot_score(nb.omp, config['score_omp_multiplier'], spot_no)
+            spot_score = omp_spot_score(nb.omp, spot_no)
         else:
             page_name = 'ref_spots'
             spot_score = nb.ref_spots.score[spot_no]
@@ -350,7 +350,7 @@ class view_spot(ColorPlotBase):
             config = nb.get_config()['thresholds']
             page_name = 'omp'
             t = nb.omp.tile[spot_no]
-            spot_score = omp_spot_score(nb.omp, config['score_omp_multiplier'], spot_no)
+            spot_score = omp_spot_score(nb.omp, spot_no)
         else:
             page_name = 'ref_spots'
             t = nb.ref_spots.tile[spot_no]
@@ -382,9 +382,9 @@ class view_spot(ColorPlotBase):
                                       np.arange(spot_yxz[1]-im_size[1], spot_yxz[1]+im_size[1]+1), spot_yxz[2]),
                           dtype=np.int16).T.reshape(-1, 3)
         im_diameter = [2*im_size[0]+1, 2*im_size[1]+1]
-        spot_colors = get_spot_colors(
-            im_yxz, t, nb.register.transform, nb.file_names, nb.basic_info, nb.extract, nb.filter
-        )[0]
+        spot_colors = get_spot_colors(yxz_base=im_yxz, t=t, transform=nb.register.icp_correction,
+                                      bg_scale=nb.filter.bg_scale, file_type=nb.extract.file_type,
+                                      nbp_file=nb.file_names, nbp_basic=nb.basic_info)[0]
         spot_colors = np.moveaxis(spot_colors, 1, 2)  # put round as the last axis to match color_norm
         spot_colors = spot_colors.reshape(im_yxz.shape[0], -1)
         # reshape

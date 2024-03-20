@@ -6,9 +6,8 @@ spots at once in the same microscope image.
 channels to distinguish every dye colour (almost always the number of channels is equal to the number of unique dyes). 
 But, a dye can have "bleed through", i.e. brightness in multiple channels from the same dye.
 
-* DAPI - A dye that fluoresces the nuclei of all cells. It can be used to register the round images to one another (not 
-recommended). The DAPI is not essential for coppafish but is recommended as a debugging tool, where it can be used as 
-an overlay in the [Viewer](diagnostics.md#viewer).
+* DAPI - A dye that fluoresces the nuclei of all cells. It is used to register the round images to one another. The 
+DAPI is also an overlay in the [Viewer](diagnostics.md#viewer).
 
 * Gene code - A sequence of dyes that are assigned to a gene for each sequencing round. Each gene has a unique gene 
 code. For example, if the dyes are labelled `0, 1, 2` and there are 2 sequencing rounds, some example gene codes are 
@@ -29,9 +28,9 @@ gene intensities would not combine linearly.
 * Point cloud - A series of spatial pixel positions. Typically used to represent detected spot positions during find 
 spots.
 
-* PSF - Stands for Point Spread Function and is used during image filtering. It is used in the Wiener deconvolution 
-which is applied to try and deblur images from noise which is caused by frequencies with a low signal-to-noise ratio. 
-See <a href="https://en.wikipedia.org/wiki/Wiener_deconvolution" target="_blank">here</a> for more details.
+* PSF - Stands for Point Spread Function and is used during image filtering. The Wiener deconvolution requires a PSF to 
+remove blurring caused by frequencies with a low signal-to-noise ratio. See 
+<a href="https://en.wikipedia.org/wiki/Wiener_deconvolution" target="_blank">here</a> for more details.
 
 * Sequencing round - An image of the tissue, made up of multiple tiles and sequencing channels. Before each imaging 
 round the tissue is treated with various solutions to remove the previous DNA probes and then hybridise new ones. Each 
@@ -44,7 +43,7 @@ the same spot in all sequencing rounds to reveal the gene code. Coppafish takes 
 and outputs the identity of each gene in situ.
 
 * Tile - A cuboid subset of the microscope image of size $n_z \times n_y \times n_x$ in z, y, and x, where $n_y = n_x$. 
-Typically, $n_z\le58$. Usually, all adjacent tiles overlap by $10\%-15\%$ to give coppafish information on how to best 
+Typically, $n_z\sim55$. Usually, all adjacent tiles overlap by $10\%-15\%$ to give coppafish information on how to best 
 align tiles (see [method](method.md) for details).
 
 
