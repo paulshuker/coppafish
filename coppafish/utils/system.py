@@ -4,7 +4,8 @@ import psutil
 import urllib
 import numpy as np
 from pathlib import PurePath
-from typing import Tuple
+from inputimeout import inputimeout, TimeoutOccurred
+from typing import Tuple, Union
 
 VERSION_URL = "https://github.com/reillytilbury/coppafish/raw/HEAD/coppafish/_version.py"
 # The character(s) that encapsulate the software version tag in _version.py, in this case it is quotation marks
@@ -30,12 +31,17 @@ def get_remote_software_version() -> str:
     Returns:
         str: version tag. None if the version could not be retrieved.
     """
+    fallback = None
     if not internet_is_active():
-        return None
-    f = urllib.request.urlopen(VERSION_URL)
-    version_contents = str(f.read())
-    index_start = version_contents.index(VERSION_ENCAPSULATE)
-    index_end = version_contents.index(VERSION_ENCAPSULATE, index_start + 1)
+        return fallback
+    try:
+        f = urllib.request.urlopen(VERSION_URL)
+        version_contents = str(f.read())
+        index_start = version_contents.index(VERSION_ENCAPSULATE)
+        index_end = version_contents.index(VERSION_ENCAPSULATE, index_start + 1)
+    except urllib.error.HTTPError:
+        # This can be reached if GitHub refuses the request due to too many recent requests.
+        return fallback
     return version_contents[index_start + 1 : index_end]
 
 
@@ -62,10 +68,10 @@ def get_available_memory() -> float:
 
 def get_core_count() -> int:
     """
-    Get the number of threads available for multiprocessing tasks on the system.
+    Get the number of CPU cores available for multiprocessing tasks on the system.
 
     Returns:
-        int: number of available threads.
+        int: number of available CPU cores.
     """
     n_threads = psutil.cpu_count(logical=True)
     if n_threads is None:
@@ -109,3 +115,23 @@ def internet_is_active() -> bool:
         return True
     except:
         return False
+
+
+def input_timeout(message: str, timeout_result: Union[str, None] = None, timeout: float = 60) -> Union[str, None]:
+    """
+    Wait for a user input. If one is not given in time, return `timeout_result`.
+
+    Args:
+        message (str): input message
+        timeout_result (str, optional): returned if no result given by the user. Default: none.
+        timeout (float, optional): time in seconds to wait for user input. Default: 60.
+
+    Returns:
+        str: input result or timeout result.
+    """
+    assert timeout > 0, f"Invalid timeout: {timeout}"
+    try:
+        user_input = str(inputimeout(prompt=message, timeout=timeout))
+        return user_input
+    except TimeoutOccurred:
+        return timeout_result

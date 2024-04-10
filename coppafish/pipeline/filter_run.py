@@ -150,6 +150,7 @@ def run_filter(
         include_dapi_seq=True,
         include_dapi_anchor=True,
         include_dapi_preseq=True,
+        include_bad_trc=False,
     )
     with tqdm(total=len(indices), desc=f"Filtering extracted {nbp_extract.file_type} files") as pbar:
         for t, r, c in indices:
@@ -171,7 +172,7 @@ def run_filter(
                 filtered_image_exists = tiles_io.image_exists(file_path, file_type)
                 file_path_raw = nbp_file.tile_unfiltered[t][r][c]
                 file_path_raw = file_path_raw[: file_path_raw.index(file_type)] + "_raw" + file_type
-                raw_image_exists = tiles_io.image_exists(file_path_raw, file_type)
+            # assert raw_image_exists, f"Raw, extracted file at\n\t{file_path_raw}\nnot found"
             pbar.set_postfix(
                 {
                     "round": r,
@@ -205,9 +206,7 @@ def run_filter(
             im_filtered = im_filtered.astype(np.float64)
             if config["deconvolve"]:
                 # Deconvolves dapi images too
-                logging.debug("Wiener deconvolve started")
                 im_filtered = filter.wiener_deconvolve(im_filtered, config["wiener_pad_shape"], wiener_filter)
-                logging.debug("Wiener deconvolve complete")
             if c == nbp_basic.dapi_channel:
                 if filter_kernel_dapi is not None:
                     im_filtered = utils.morphology.top_hat(im_filtered, filter_kernel_dapi)
@@ -226,8 +225,8 @@ def run_filter(
                     # Images cannot scale too much as to make negative pixels below the invalid pixel value of -15,000
                     scale = np.abs(min_pixel_value) / np.abs(im_filtered.min())
                     scale = min([scale, max_pixel_value / im_filtered.max()])
-                    # A 60% margin for max/min pixel variability between images
-                    scale = config["scale_multiplier"] * float(scale)
+                    # A margin for max/min pixel variability between images. Scale can never be below 1.
+                    scale = max([config["scale_multiplier"] * float(scale), 1])
                     logging.debug(f"{scale=} computed from {t=}, {r=}, {c=}")
                     # Save scale in case need to re-run without the notebook
                     filter_base.save_scale(nbp_file.scale, scale, scale)
@@ -249,8 +248,8 @@ def run_filter(
                 c,
                 suffix="_raw" if r == nbp_basic.pre_seq_round else "",
                 num_rotations=config["num_rotations"],
-                n_clip_warn=config["n_clip_warn"],
-                n_clip_error=config["n_clip_error"],
+                percent_clip_warn=config["percent_clip_warn"],
+                percent_clip_error=config["percent_clip_error"],
             )
             # zyx -> yxz
             saved_im = saved_im.transpose((1, 2, 0))
@@ -261,6 +260,24 @@ def run_filter(
             np.savez_compressed(hist_counts_values_path, hist_counts, hist_values)
             del saved_im
             pbar.update()
+        for t, r, c in nbp_basic.bad_trc:
+            # in case of bad trc, save a blank image
+            im_filtered = np.zeros((nbp_basic.tile_sz, nbp_basic.tile_sz, len(nbp_basic.use_z)), dtype=np.int32)
+            saved_im = tiles_io.save_image(
+                nbp_file,
+                nbp_basic,
+                file_type,
+                im_filtered,
+                t,
+                r,
+                c,
+                suffix="_raw",
+                num_rotations=config["num_rotations"],
+                percent_clip_warn=config["percent_clip_warn"],
+                percent_clip_error=config["percent_clip_error"],
+            )
+            del im_filtered, saved_im
+
     nbp.auto_thresh = auto_thresh
     nbp.image_scale = scale
     # Add a variable for bg_scale (actually computed in register)

@@ -4,9 +4,11 @@ import skimage
 import numpy as np
 import numpy.typing as npt
 from scipy import signal
-from typing import Optional, Tuple
-
-from ..setup import NotebookPage
+from scipy.ndimage import affine_transform
+from skimage.transform import warp
+from itertools import product
+from tqdm import tqdm
+from ..setup import NotebookPage, Notebook
 from ..utils import tiles_io
 
 
@@ -44,13 +46,18 @@ def load_reg_data(nbp_file: NotebookPage, nbp_basic: NotebookPage):
         with open(os.path.join(nbp_file.output_dir, "registration_data.pkl"), "rb") as f:
             registration_data = pickle.load(f)
     else:
-        n_tiles, n_rounds, n_channels = nbp_basic.n_tiles, nbp_basic.n_rounds + nbp_basic.n_extra_rounds, \
-            nbp_basic.n_channels
-        round_registration = {'flow_dir': os.path.join(nbp_file.output_dir, 'flow')}
-        channel_registration = {'transform': np.zeros((n_channels, 4, 3))}
-        registration_data = {'round_registration': round_registration,
-                             'channel_registration': channel_registration,
-                             'blur': False}
+        n_tiles, n_rounds, n_channels = (
+            nbp_basic.n_tiles,
+            nbp_basic.n_rounds + nbp_basic.n_extra_rounds,
+            nbp_basic.n_channels,
+        )
+        round_registration = {"flow_dir": os.path.join(nbp_file.output_dir, "flow")}
+        channel_registration = {"transform": np.zeros((n_channels, 4, 3))}
+        registration_data = {
+            "round_registration": round_registration,
+            "channel_registration": channel_registration,
+            "blur": False,
+        }
     return registration_data
 
 
@@ -167,7 +174,8 @@ def split_3d_image(image, z_subvolumes, y_subvolumes, x_subvolumes, z_box, y_box
         image = yxz_to_zyx(image)
 
     # Make sure that box dims are even
-    assert z_box % 2 == 0 and y_box % 2 == 0 and x_box % 2 == 0, "Box dimensions must be even numbers!"
+    assert y_box % 2 == 0 and x_box % 2 == 0, "Box dimensions must be even numbers!"
+    assert z_subvolumes == 1
     z_image, y_image, x_image = image.shape
 
     # Allow 0.5 of a box either side and then split the middle with subvols evenly spaced points, ie into subvols - 1
@@ -192,7 +200,7 @@ def split_3d_image(image, z_subvolumes, y_subvolumes, x_subvolumes, z_box, y_box
     # Split the image into subvolumes and store them in the array
     for z, y, x in np.ndindex(z_subvolumes, y_subvolumes, x_subvolumes):
         z_centre, y_centre, x_centre = z_box // 2 + z * z_unit, y_box // 2 + y * y_unit, x_box // 2 + x * x_unit
-        z_start, z_end = z_centre - z_box // 2, z_centre + z_box // 2
+        z_start, z_end = 0, image.shape[0] + 1
         y_start, y_end = y_centre - y_box // 2, y_centre + y_box // 2
         x_start, x_end = x_centre - x_box // 2, x_centre + x_box // 2
 
@@ -351,16 +359,18 @@ def merge_subvols(position, subvol):
     # set min values to 0
     position -= np.min(position, axis=0)
     z_box, y_box, x_box = subvol.shape[1:]
-    centre = position + np.array([z_box//2, y_box//2, x_box//2])
+    centre = position + np.array([z_box // 2, y_box // 2, x_box // 2])
     # Get the min and max values of the position, use this to get the size of the merged image and initialise it
     max_pos = np.max(position, axis=0)
     merged = np.zeros((max_pos + subvol.shape[1:]).astype(int))
     neighbour_im = np.zeros_like(merged)
     # Loop through the subvols and add them to the merged image at the correct position.
     for i in range(position.shape[0]):
-        subvol_i_mask = np.ix_(range(position[i, 0], position[i, 0] + z_box),
-                               range(position[i, 1], position[i, 1] + y_box),
-                               range(position[i, 2], position[i, 2] + x_box))
+        subvol_i_mask = np.ix_(
+            range(position[i, 0], position[i, 0] + z_box),
+            range(position[i, 1], position[i, 1] + y_box),
+            range(position[i, 2], position[i, 2] + x_box),
+        )
         neighbour_im[subvol_i_mask] += 1
         merged[subvol_i_mask] = subvol[i]
 
@@ -383,61 +393,131 @@ def merge_subvols(position, subvol):
     return merged
 
 
-def generate_reg_images(nb, t: int, r: int, c: int, filter: bool = False, image_value_range: Optional[Tuple] = None):
+def generate_reg_images(nb: Notebook):
     """
     Function to generate registration images. These are `[500 x 500 x min(10, n_planes)]` images centred in the middle
     of the tile and saved as uint8. They are saved as .npy files in the reg_images folder in the output directory.
 
     Args:
         nb: notebook.
-        t (int): tile index.
-        r (int): round index.
-        c (int): channel index.
-        filter (bool, optional): Apply the sobel filter. Default: false.
-        image_value_range (`tuple` of `float`, optional): tuple of min and max image pixel values to clip. Default: no
-            clipping.
     """
+    use_tiles, use_rounds, use_channels = nb.basic_info.use_tiles, nb.basic_info.use_rounds, nb.basic_info.use_channels
+    anchor_round, anchor_channel, dapi_channel = (nb.basic_info.anchor_round, nb.basic_info.anchor_channel,
+                                                  nb.basic_info.dapi_channel)
     yx_centre = nb.basic_info.tile_centre.astype(int)[:2]
     yx_radius = np.min([250, nb.basic_info.tile_sz // 2])
-    if len(nb.basic_info.use_z) < 10:
-        z_planes = nb.basic_info.use_z
+    z_central_index = int(np.median(np.arange(len(nb.basic_info.use_z))))
+    if len(nb.basic_info.use_z) <= 10:
+        z_planes = np.arange(len(nb.basic_info.use_z))
     else:
-        z_central_index = int(np.floor(np.median(np.arange(len(nb.basic_info.use_z)))))
-        z_planes = [nb.basic_info.use_z[z_central_index + i] - min(nb.basic_info.use_z) for i in range(-4, 6)]
-    tile_centre = np.array([yx_centre[0], yx_centre[1]])
+        z_planes = np.arange(z_central_index - 5, z_central_index + 5)
 
-    # Get the image for the tile and channel
-    im = yxz_to_zyx(
-        tiles_io.load_image(
-            nb.file_names,
-            nb.basic_info,
-            nb.extract.file_type,
-            t,
-            r,
-            c,
-            [
-                np.arange(tile_centre[0] - yx_radius, tile_centre[0] + yx_radius),
-                np.arange(tile_centre[1] - yx_radius, tile_centre[1] + yx_radius),
-                np.asarray(z_planes) - np.min(nb.basic_info.use_z),
-            ],
-            apply_shift=False,
-        )
-    )
-    # Clip the image to the specified range if required
-    if image_value_range is None:
-        image_value_range = (np.min(im), np.max(im))
-    im = np.clip(im, image_value_range[0], image_value_range[1]) - image_value_range[0]
-    # Filter the image if required
-    if filter:
-        im = skimage.filters.sobel(im)
+    tile_centre = np.array([yx_centre[0], yx_centre[1]])
+    flow_indices = np.ix_(np.arange(3), np.arange(tile_centre[0] - yx_radius, tile_centre[0] + yx_radius),
+                         np.arange(tile_centre[1] - yx_radius, tile_centre[1] + yx_radius), z_planes)
+    coords = np.meshgrid(np.arange(yx_radius * 2), np.arange(yx_radius * 2), np.arange(len(z_planes)),
+                         indexing='ij')
+    new_origin = np.array([yx_centre[0] - yx_radius, yx_centre[1] - yx_radius, z_planes[0]])
+
+    # Create the reg_images directory if it doesn't exist
+    reg_images_dir = os.path.join(nb.file_names.output_dir, 'reg_images')
+    if not os.path.isdir(os.path.join(nb.file_names.output_dir, 'reg_images')):
+        os.makedirs(reg_images_dir)
+    # Create the t directories if they don't exist, within these create the round reg and channel reg directories
+    for t in use_tiles:
+        if not os.path.isdir(os.path.join(reg_images_dir, f't{t}')):
+            os.makedirs(os.path.join(reg_images_dir, f't{t}'))
+        if not os.path.isdir(os.path.join(reg_images_dir, f't{t}', 'round')):
+            os.makedirs(os.path.join(reg_images_dir, f't{t}', 'round'))
+        if not os.path.isdir(os.path.join(reg_images_dir, f't{t}', 'channel')):
+            os.makedirs(os.path.join(reg_images_dir, f't{t}', 'channel'))
+
+    # Get the anchor round and active channels
+    anchor_round_active_channels = [dapi_channel, anchor_channel]
+    for t, c in tqdm(product(use_tiles, anchor_round_active_channels), desc='Anchor Images', total=len(use_tiles) * 2):
+        im = tiles_io.load_image(nb.file_names, nb.basic_info, nb.extract.file_type, t, anchor_round, c,
+                                 yxz=[np.arange(tile_centre[0] - yx_radius, tile_centre[0] + yx_radius),
+                                      np.arange(tile_centre[1] - yx_radius, tile_centre[1] + yx_radius), z_planes])
+        sub_dir = 'round' if c == dapi_channel else 'channel'
+        file_name = os.path.join(reg_images_dir, f't{t}', sub_dir, 'anchor.npy')
+        save_reg_image(im=im, file_path=file_name)
+
+    # get the round images, apply optical flow, apply icp, concatenate and save
+    for t, r in tqdm(product(use_tiles, use_rounds), desc='Round Images', total=len(use_tiles) * len(use_rounds)):
+        im = tiles_io.load_image(nb.file_names, nb.basic_info, nb.extract.file_type, t, r, dapi_channel,
+                                 yxz=[np.arange(tile_centre[0] - yx_radius, tile_centre[0] + yx_radius),
+                                      np.arange(tile_centre[1] - yx_radius, tile_centre[1] + yx_radius), z_planes])
+        flow = np.load(os.path.join(nb.register.flow_dir, 'smooth', f't{t}_r{r}.npy'), mmap_mode='r')
+        flow = flow[flow_indices]
+        # invert the flow as we are going from round r to anchor round
+        flow = -(flow.astype(np.float32))
+        im_flow = warp(im.astype(np.float32), coords + flow, order=1, mode='constant', cval=0)
+
+        # apply icp
+        icp_correction = adjust_affine(affine=nb.register.icp_correction[t, r, anchor_channel], new_origin=new_origin)
+        im_flow_icp = affine_transform(im_flow, icp_correction, order=1, mode='constant', cval=0)
+        im_concat = np.concatenate([im[None], im_flow[None], im_flow_icp[None]], axis=0)
+        file_name = os.path.join(reg_images_dir, f't{t}', 'round', f'r{r}.npy')
+        save_reg_image(im=im_concat, file_path=file_name)
+
+    # get the channel images, save, apply optical flow, save, apply icp, save
+    r_mid = int(np.median(np.array(use_rounds)))
+    for t, c in tqdm(product(use_tiles, use_channels), desc='Channel Images', total=len(use_tiles) * len(use_channels)):
+        im = tiles_io.load_image(nb.file_names, nb.basic_info, nb.extract.file_type, t, r_mid, c,
+                                 yxz=[np.arange(tile_centre[0] - yx_radius, tile_centre[0] + yx_radius),
+                                      np.arange(tile_centre[1] - yx_radius, tile_centre[1] + yx_radius), z_planes])
+        flow = np.load(os.path.join(nb.register.flow_dir, 'smooth', f't{t}_r{r_mid}.npy'), mmap_mode='r')
+        flow = flow[flow_indices]
+        # invert the flow as we are going from round r to anchor round
+        flow = -(flow.astype(np.float32))
+        im_flow = warp(im.astype(np.float32), coords + flow, order=1, mode='constant', cval=0, preserve_range=True)
+        # apply channel correction
+        channel_transform = adjust_affine(affine=nb.register_debug.channel_transform_initial[c],
+                                          new_origin=new_origin)
+        im_flow_adjusted = affine_transform(im_flow, channel_transform, order=1, mode='constant', cval=0)
+
+        # apply icp
+        icp_correction = adjust_affine(affine=nb.register.icp_correction[t, r_mid, c], new_origin=new_origin)
+        im_flow_icp = affine_transform(im_flow, icp_correction, order=1, mode='constant', cval=0)
+        im_concat = np.concatenate([im[None], im_flow_adjusted[None], im_flow_icp[None]], axis=0)
+        file_name = os.path.join(reg_images_dir, f't{t}', 'channel', f'c{c}.npy')
+        save_reg_image(im=im_concat, file_path=file_name)
+
+
+def adjust_affine(affine: np.ndarray, new_origin: np.ndarray) -> np.ndarray:
+    """
+    adjusts the affine transform for a new origin, then converts from 4 x 3 to 3 x 4 format.
+    Args:
+        affine: 4 x 3 affine transform (y x z)
+        new_origin: (y, x, z) origin to adjust for
+
+    Returns:
+        affine: 3 x 4 affine transform (y x z)
+    """
+    assert affine.shape == (4, 3), "Affine must be 4 x 3"
+    affine = affine.T
+    affine[:, 3] += (affine[:, :3] - np.eye(3)) @ new_origin
+    return affine
+
+
+def save_reg_image(im: np.ndarray, file_path: str) -> None:
+    """
+    takes in a small image and saves it as a uint8 image in the output directory
+    Args:
+        im: image to save (y, x, z) or 3( y, x, z) (usually (500 x 500 x 10) or (3, 500, 500, 10))
+        file_path: str, path to save the image
+
+    """
+    # check if the file already exists
+    if os.path.isfile(file_path):
+        return
+    im_min, im_max = np.min(im), np.max(im)
+    im = im - im_min
     # Save the image as uint8
-    if np.max(im) != 0:
+    if im_max != 0:
         im = im / np.max(im) * 255  # Scale to 0-255
     im = im.astype(np.uint8)
-    output_dir = os.path.join(nb.file_names.output_dir, "reg_images")
-    if not os.path.isdir(output_dir):
-        os.makedirs(output_dir)
-    np.save(os.path.join(output_dir, "t" + str(t) + "r" + str(r) + "c" + str(c)), im)
+    np.save(file_path, im)
 
 
 def window_image(image: np.ndarray) -> np.ndarray:
@@ -494,7 +574,13 @@ def apply_flow(flow: np.ndarray, points: np.ndarray, ignore_oob: bool = True, ro
         new_points = np.round(new_points).astype(int)
     ny, nx, nz = flow.shape[1:]
     if ignore_oob:
-        oob = (new_points[:, 0] < 0) | (new_points[:, 0] >= ny) | (new_points[:, 1] < 0) | (new_points[:, 1] >= nx) | \
-              (new_points[:, 2] < 0) | (new_points[:, 2] >= nz)
+        oob = (
+            (new_points[:, 0] < 0)
+            | (new_points[:, 0] >= ny)
+            | (new_points[:, 1] < 0)
+            | (new_points[:, 1] >= nx)
+            | (new_points[:, 2] < 0)
+            | (new_points[:, 2] >= nz)
+        )
         new_points = new_points[~oob]
     return new_points
