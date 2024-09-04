@@ -13,6 +13,7 @@ from tqdm import tqdm
 from typing_extensions import Self
 
 from .. import log
+from ..spot_colours import base as spot_colours_base
 from ..omp import base as omp_base
 from ..setup import Notebook, NotebookPage
 
@@ -30,6 +31,7 @@ class BuildPDF:
     GENE_PROB_THRESHOLD = 0.7
     DEFAULT_REF_SCORE_THRESHOLD = 0.3
     DEFAULT_OMP_SCORE = 0.3
+    REGISTER_MAX_SUBSET_SIZE = 100
     HEATMAP_BIN_SIZE = 10  # In pixel count
     HEATMAP_PROB_SCORE_THRESH = 0.5
     HEATMAP_ANCHOR_SCORE_THRESH = 0.5
@@ -149,8 +151,9 @@ class BuildPDF:
                     plt.close(fig)
         pbar.update()
 
-        if not os.path.isfile(os.path.join(output_dir, "_find_spots.pdf")) and nb.has_page("find_spots"):
-            with PdfPages(os.path.join(output_dir, "_find_spots.pdf")) as pdf:
+        find_spots_path = os.path.join(output_dir, "_find_spots.pdf")
+        if not os.path.isfile(find_spots_path) and nb.has_page("find_spots"):
+            with PdfPages(find_spots_path) as pdf:
                 pbar.set_postfix_str("find spots")
                 fig, axes = self.create_empty_page(1, 1)
                 text_find_spots_info = ""
@@ -235,6 +238,69 @@ class BuildPDF:
         pbar.update()
 
         pbar.set_postfix_str("register")
+        register_path = os.path.join(output_dir, "_register.pdf")
+        if not os.path.isfile(register_path) and nb.has_page("register"):
+            with PdfPages(register_path) as pdf:
+                data_length = min(self.REGISTER_MAX_SUBSET_SIZE, nb.basic_info.tile_sz)
+                z = nb.basic_info.use_z[len(nb.basic_info.use_z) // 2]
+                yxz_subset = np.meshgrid(
+                    np.linspace(0, data_length - 1, data_length),
+                    np.linspace(0, data_length - 1, data_length),
+                    np.array([z]),
+                    indexing="ij",
+                )
+                yxz_subset = np.array(yxz_subset, np.int16).T
+                yxz_subset = yxz_subset.reshape((-1, 3))
+                for t in nb.basic_info.use_tiles:
+                    channels_to_index = {c: i for i, c in enumerate(self.use_channels_all)}
+                    fig, axes = self.create_empty_page(
+                        nb.basic_info.n_rounds + nb.basic_info.n_extra_rounds,
+                        len(channels_to_index),
+                        size=(self.A4_SIZE_INCHES[0] * 2, self.A4_SIZE_INCHES[1] * 2),
+                    )
+                    for ax in axes.ravel():
+                        ax.set_xticks([])
+                        ax.set_yticks([])
+                    fig.suptitle(f"Tile {t} registered images")
+                    for r in self.use_rounds_all:
+                        if nb.basic_info.use_anchor and r == nb.basic_info.anchor_round:
+                            use_channels = [c for c in [nb.basic_info.anchor_channel] if c is not None]
+                        else:
+                            use_channels = list(nb.basic_info.use_channels)
+                        for c in use_channels:
+                            c_index = channels_to_index[c]
+                            ax: plt.Axes = axes[r, c_index]
+                            data = np.zeros((data_length, data_length))
+
+                            if r in nb.basic_info.use_rounds and c in nb.basic_info.use_channels:
+                                # Sequencing image.
+                                data = spot_colours_base.get_spot_colours(
+                                    nb.filter.images,
+                                    nb.register.flow,
+                                    nb.register.icp_correction,
+                                    yxz_subset,
+                                    t,
+                                    use_channels=[c],
+                                )
+                                data = data[:, r, 0].reshape((data_length, data_length))
+                            if r == nb.basic_info.anchor_round and c == nb.basic_info.anchor_channel:
+                                data = nb.filter.images[t, r, c, :data_length, :data_length, z]
+
+                            if c_index == 0:
+                                ax.set_ylabel(f"{r if r != nb.basic_info.anchor_round else 'anchor'}")
+                            if r == max(self.use_rounds_all):
+                                ax.set_xlabel(f"{c}")
+                                if nb.basic_info.dapi_channel is not None and c == nb.basic_info.dapi_channel:
+                                    ax.set_xlabel(f"dapi")
+                                if nb.basic_info.anchor_channel is not None and c == nb.basic_info.anchor_channel:
+                                    ax.set_xlabel(f"anchor")
+
+                            im = ax.imshow(data, cmap="viridis")
+                            ax.set_xticks([])
+                            ax.set_yticks([])
+                    fig.tight_layout()
+                    pdf.savefig(fig)
+                    plt.close(fig)
         pbar.update()
 
         pbar.set_postfix_str("stitch")
