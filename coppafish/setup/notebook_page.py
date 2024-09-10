@@ -299,13 +299,6 @@ class NotebookPage:
                 + "tile/round/channel index is uniquely saved. For example, tile 0, round 1, channel 2 is labelled "
                 + "t0r1c2 so it can be gathered as ndarray[int1e] by nb.find_spots.spot_yxz['t0r1c2'][:]",
             ],
-            # "spot_yxz": [
-            #     "ndarray[int16]",
-            #     "Numpy array [n_total_spots x 3]"
-            #     + "`spot_yxz[i,:]` is `[y, x, z]` for spot $i$"
-            #     + "$y$, $x$ gives the local tile coordinates in yx-pixels. "
-            #     + "$z$ gives local tile coordinate in z-pixels (0 if *2D*)",
-            # ],
         },
         "stitch": {
             "tile_origin": [
