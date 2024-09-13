@@ -257,8 +257,8 @@ class NotebookPage:
         "filter": {
             "images": [
                 "zarray",
-                "`(n_tiles x (n_rounds + n_extra_rounds) x n_channels x tile_sz x tile_sz x len(use_z))` zarray float16. "
-                + "All microscope images after filtering (deblurring) is applied.",
+                "`(n_tiles x (n_rounds + n_extra_rounds) x n_channels x tile_sz x tile_sz x len(use_z))` zarray "
+                + "float16. All microscope images after filtering (deblurring) is applied.",
             ],
         },
         "filter_debug": {

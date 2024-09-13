@@ -306,13 +306,13 @@ def get_spot_colours_new(
             # Result has shape (1, 1, 1, 1, n_points).
             image_trc = image_trc[None, None]
             colours_trc = torch.nn.functional.grid_sample(image_trc, c_yxz_grid[None, None, None], align_corners=True)
-            colours_trc = colours_trc[0, 0, 0, 0].numpy().astype(output_dtype)
+            colours_trc = colours_trc[0, 0, 0, 0]
 
             # Set out of bound coordinates to out_of_bounds_value.
             is_out_of_bounds = (c_yxz_grid < -1) | (c_yxz_grid > +1)
             colours_trc[is_out_of_bounds.any(1)] = out_of_bounds_value
 
-            colours[:, r, c_index] = colours_trc
+            colours[:, r, c_index] = colours_trc.numpy().astype(output_dtype)
     return colours
 
 

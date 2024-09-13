@@ -95,7 +95,7 @@ def get_all_colours(
         - nbp_omp (notebook page): `omp` notebook page.
 
     Returns:
-        - (`(n_spots) ndarray[int16]`) all_colours: all spot colours.
+        - (`(n_spots x n_rounds_use x n_channels_use) ndarray[int16]`) all_colours: all spot colours.
         - (`(n_spots) ndarray[int16]`) all_tiles: the tile for each spot.
     """
     assert type(nbp_basic) is NotebookPage
