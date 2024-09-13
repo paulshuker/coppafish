@@ -1,5 +1,4 @@
 import itertools
-from os import path
 from typing import Any, Optional
 
 from dash import Dash, html, dcc, Output, Input, State
@@ -119,6 +118,11 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
         spot_data["omp/intensity"] = np.ones_like(spot_data["omp/tile"], np.float32)
         spot_data["omp/colours"] = omp_base.get_all_colours(nb.basic_info, nb.omp)[0]
     del nb
+    max_score = 1.0
+    for method in methods:
+        method_max_score = spot_data[f"{method}/score"].max()
+        if method_max_score > max_score:
+            max_score = method_max_score
     # The min and max z planes to show at the start.
     z_planes = [bound_z(mid_z - 1, use_z), bound_z(mid_z + 1, use_z)]
     subplot_options = ("Summary", "Gene Legend", "Colour", "Colour Map")
@@ -131,6 +135,7 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
             id="store-range", data={"xaxis": [0, dapi_image.shape[2]], "yaxis": [0, dapi_image.shape[1]]}
         ),  # Store the current viewing range.
         dcc.Store(id="store-z-bounds", data=None),
+        dcc.Store(id="store-score-bounds", data=None),
         dcc.Store(id="store-method", data=None),  # Store the current selected method.
         dcc.Store(id="store-spot-indices", data=None),  # Store the current viewing spot indices.
         dcc.Store(id="store-selected-spot", data=None),  # Store the selected spot index.
@@ -241,6 +246,23 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
                         ),
                     ],
                 ),
+                html.Div(
+                    style={"align-items": "center", "display": "flex", "flex-direction": "column", "width": "200px"},
+                    children=[
+                        html.Label("Score", style={"display": "flex"}),
+                        html.Div(
+                            dcc.RangeSlider(
+                                0,
+                                max_score,
+                                marks={0.0: "0.0", 0.25: "0.25", 0.5: "0.5", 0.75: "0.75", 1.0: "1.0"},
+                                id="score-slider",
+                                value=[max(max_score / 2, 0.4), max_score],
+                                allowCross=False,
+                            ),
+                            style={"display": "block", "width": "100%"},
+                        ),
+                    ],
+                ),
             ],
         ),
         html.A(
@@ -253,19 +275,26 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
     ]
 
     def create_main_figure(
-        method: str, z_bounds: list[int, int], stored_view: dict[str, Any], selected_genes: Optional[list[bool]]
+        method: str,
+        z_bounds: list[int, int],
+        score_bounds: list[float, float],
+        stored_view: dict[str, Any],
+        selected_genes: Optional[list[bool]],
     ) -> tuple[go.Figure, list[int]]:
         assert type(method) is str
         assert type(methods) is list
         assert method in methods
         assert type(z_bounds) is list
+        assert type(score_bounds) is list
         assert type(stored_view) is dict
         assert type(selected_genes) is list or selected_genes is None
         yxz = spot_data[f"{method}/yxz"]
         gene_numbers = spot_data[f"{method}/gene_no"]
+        scores = spot_data[f"{method}/score"]
         keep = np.logical_and(yxz[:, 2] >= z_bounds[0], yxz[:, 2] <= z_bounds[1])
+        keep *= np.logical_and(scores >= score_bounds[0], scores < score_bounds[1])
         if selected_genes is not None:
-            keep = np.logical_and(keep, (gene_numbers[:, None] == np.nonzero(selected_genes)[0][None]).any(1))
+            keep *= (gene_numbers[:, None] == np.nonzero(selected_genes)[0][None]).any(1)
         spot_indices = keep.nonzero()[0].tolist()
         yxz = yxz[keep]
         gene_numbers = gene_numbers[keep]
@@ -442,29 +471,34 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
     @app.callback(
         Output("viewer", "figure"),
         Output("store-z-bounds", "data"),
+        Output("store-score-bounds", "data"),
         Output("store-method", "data"),
         Output("store-spot-indices", "data"),
         Output("store-selected-spot", "data"),
         Output("store-selected-genes-last", "data"),
         Input("z-slider", "value"),
+        Input("score-slider", "value"),
         Input("method-choice", "value"),
         Input("viewer", "clickData"),
         Input("store-selected-genes", "data"),
         State("store-range", "data"),  # Use stored view range to preserve view
         State("store-method", "data"),
         State("store-z-bounds", "data"),
+        State("store-score-bounds", "data"),
         State("store-spot-indices", "data"),
         State("store-selected-genes-last", "data"),
         State("viewer", "figure"),
     )
     def update_viewer(
         z_bounds: list[int, int],
+        score_bounds: list[float, float],
         method_name: str,
         clickData: Optional[dict[str, Any]],
         selected_genes: list[int],
         stored_view: dict[str, Any],
         last_method: str,
         last_z_bounds: list[int, int],
+        last_score_bounds: list[float, float],
         last_spot_indices: list[int],
         last_selected_genes: list[int],
         last_figure: go.Figure,
@@ -473,12 +507,17 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
         new_figure = last_figure
         spot_indices = last_spot_indices
         spot_index = _get_index_from_click_data(clickData)
-        if method != last_method or z_bounds != last_z_bounds or selected_genes != last_selected_genes:
+        if (
+            method != last_method
+            or z_bounds != last_z_bounds
+            or score_bounds != last_score_bounds
+            or selected_genes != last_selected_genes
+        ):
             # The main figure is only updated when it must be updated. This is done to avoid performance impacts from
             # too many refreshes when the input has no effect on the viewer, like clicking on a spot.
             spot_index = None
-            new_figure, spot_indices = create_main_figure(method, z_bounds, stored_view, selected_genes)
-        return new_figure, z_bounds, method, spot_indices, spot_index, selected_genes
+            new_figure, spot_indices = create_main_figure(method, z_bounds, score_bounds, stored_view, selected_genes)
+        return new_figure, z_bounds, score_bounds, method, spot_indices, spot_index, selected_genes
 
     @app.callback(
         Output("subplot", "figure"),
@@ -557,4 +596,4 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
             return new_data
         return {"xaxis": [0, dapi_image.shape[2]], "yaxis": [0, dapi_image.shape[1]]}
 
-    app.run(debug=True, host="0.0.0.0")
+    app.run(debug=True, host="0.0.0.0", port="8080")
