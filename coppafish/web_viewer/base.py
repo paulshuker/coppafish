@@ -557,4 +557,4 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
             return new_data
         return {"xaxis": [0, dapi_image.shape[2]], "yaxis": [0, dapi_image.shape[1]]}
 
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0")
