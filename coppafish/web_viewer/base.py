@@ -46,6 +46,9 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
             in the file, a warning is issued and is not plotted in the viewer. Default: random gene colours/symbols.
         - debug (bool, optional): additional debugging information. Default: false.
     """
+    # TODO: We need a new way of viewing this data. Viewing millions of scatter points is unfeasible like this.
+    # Instead, I think try superimpose the points into one image using DataShader, view this image, interact with this
+    # one image by simply using the cursor's position with a scipy KDTree.
     assert type(nb) is Notebook
     assert gene_marker_file is None or type(str(gene_marker_file)) is str
     assert type(debug) is bool
