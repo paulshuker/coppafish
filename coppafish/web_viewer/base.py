@@ -271,7 +271,7 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
         gene_numbers = gene_numbers[keep]
         labels = [f"{gene_number}: {gene_names[gene_number]}" for gene_number in gene_numbers]
         figure = go.Figure()
-        figure.add_trace(go.Image(z=dapi_image[bound_z(z_bounds[0], use_z)], opacity=0.5, hoverinfo="none"))
+        # figure.add_trace(go.Image(z=dapi_image[bound_z(z_bounds[0], use_z)], opacity=0.5, hoverinfo="none"))
         # Use WebGL to accelerate the rendering of spots. Especially good when there are > 10,000 spots.
         figure.add_trace(
             go.Scattergl(
