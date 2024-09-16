@@ -8,11 +8,12 @@ between sequencing rounds and channels.
 ## Definitions
 
 - $r$ and $c$ represents sequencing rounds and channels respectively.
-- $\mathbf{B}_{grc}$ represents gene g's bled code in round $r$, channel $c$.
+- $\mathbf{B}_{grc}$ represents the final gene g's bled code in round $r$, channel $c$ computed in 
+[call spots](call_spots.md).
 - $\mathbf{S}_{prc}$ is pixel $p$'s colour in round $r$, channel $c$, after pre-processing is applied.
 - $\mathbf{c}_{pgi}$ is the OMP coefficient given to gene $g$ for image pixel $p$ on the $i$'th iteration. $i$ takes 
 values $1, 2, 3, ...$
-- $||...||^{(...)}$ represents an L2 norm (or Frobenius norm for a matrix) over indices within the brackets.
+- $||...||$ represents an L2 norm (or Frobenius norm for a matrix) over all indices that are labelled with a dot.
 
 ## 0: Pre-processing
 
@@ -34,7 +35,7 @@ For the first iteration, $\mathbf{R}_{prc(i=1)} = \mathbf{S}_{prc}$. Using this 
 computed for every gene and background gene $g$ as 
 
 $$
-(\text{gene scores})_{pgi} = \frac{\sum_{rc}(\mathbf{B}_{grc}\mathbf{R}_{prci})}{||\mathbf{R}_{prci}||^{rc} + \lambda_d}
+(\text{gene scores})_{pgi} = \frac{\sum_{rc}(\mathbf{B}_{grc}\mathbf{R}_{prci})}{||\mathbf{R}_{p..i}|| + \lambda_d}
 $$
 
 A gene is successfully assigned to a pixel when all conditions are met:
@@ -42,7 +43,7 @@ A gene is successfully assigned to a pixel when all conditions are met:
 - The best gene score is above `dp_thresh` (typically 0.225).
 - The best gene is not already assigned to the pixel.
 - The best gene is not a background gene.
-- There are fewer than $\text{max_genes} - i + 1$ genes/background genes above the `dp_thresh` score.
+- There are fewer than $(\text{max\_genes} - i + 1)$ genes/background genes above the `dp_thresh` score.
 
 The reasons for each of these conditions is:
 

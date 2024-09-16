@@ -1,7 +1,7 @@
 # <img src="/docs/images/logo.png" width="60"/> coppafish
 
 ![https://github.com/paulshuker/coppafish/blob/dev/.github/workflows/integration.yaml](https://github.com/paulshuker/coppafish/actions/workflows/integration.yaml/badge.svg)
-![Static Badge](https://img.shields.io/badge/status-alpha-99cc33)
+![Static Badge](https://img.shields.io/badge/status-mature-99cc1)
 ![GitHub Tag](https://img.shields.io/github/v/tag/paulshuker/coppafish?label=version)
 ![GitHub License](https://img.shields.io/github/license/paulshuker/coppafish)
 

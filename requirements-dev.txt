@@ -8,4 +8,5 @@ pyright
 black
 # Automatic imports organiser
 isort
-
+# Documentation
+mkdocs-material

@@ -70,7 +70,7 @@ threshold,
 export_to_pciseq(nb, method, score_thresh, intensity_thresh)
 ```
 
-where score_thresh and intensity_thresh are numbers. Check the [Viewer](dianogstics.md#Viewer) for help deciding on 
+where score_thresh and intensity_thresh are numbers. Check the [Viewer](diagnostics.md#Viewer) for help deciding on 
 thresholds.
 
 ## Email notification
