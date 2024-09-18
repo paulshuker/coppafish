@@ -3,6 +3,7 @@ import io
 import itertools
 import math as maths
 import os
+import PIL
 from typing import Any, Optional
 
 import dash
@@ -145,7 +146,7 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
     # Level 1, most zoomed out view.
     new_state = ViewState(1_200.0, None)
     new_state.datashade = True
-    new_state.datashade_downsample_factor = 2.0
+    new_state.datashade_downsample_factor = 3
     view_states.append(new_state)
     # Level 2+, each point plotted in a scatter. The image is chunked to improve performance.
     chunk_size = 1_200.0
@@ -394,7 +395,6 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
         labels = [f"{gene_number}: {gene_names[gene_number]}" for gene_number in gene_numbers]
         figure = go.Figure()
         if view_state.datashade:
-            # TODO: Use datashade to plot an image of the gene reads.
             spot_distributions = pd.DataFrame(dict(x=[], y=[], cat=[]))
             for g in range(gene_names.size):
                 is_gene_g = gene_numbers == g
@@ -411,8 +411,8 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
             y_min = view_state.get_image_slices_yx(dapi_image.shape[1:3])[0].start
             y_max = view_state.get_image_slices_yx(dapi_image.shape[1:3])[0].stop
             canvas = ds.Canvas(
-                plot_width=dapi_image.shape[2],
-                plot_height=dapi_image.shape[1],
+                plot_width=dapi_image.shape[2] // view_state.datashade_downsample_factor,
+                plot_height=dapi_image.shape[1] // view_state.datashade_downsample_factor,
                 x_range=(x_min, x_max),
                 y_range=(y_min, y_max),
                 x_axis_type="linear",
@@ -423,9 +423,11 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
             aggregate = canvas.points(spot_distributions, "x", "y", ds.by("cat", ds.count()))
             image = tf.shade(aggregate, name="Default colour mapping")
 
+            # Upsample image.
+            image = image.to_pil().resize((dapi_image.shape[2], dapi_image.shape[1]), PIL.Image.NEAREST)
+
             # Image is converted into a numpy array.
-            image = np.array(image.to_pil())
-            print(f"{image.dtype=}")
+            image = np.array(image)
 
             figure.add_trace(go.Image(z=image))
         if not view_state.datashade:

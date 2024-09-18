@@ -11,7 +11,7 @@ class ViewState:
     # The number of pixels in the DataShade background image is
     # floor(W / datashade_downsample_factor) by floor(H / datashade_downsample_factor)
     # where W and H is the number of pixels along the x and y axes for the background image.
-    datashade_downsample_factor: float
+    datashade_downsample_factor: int
     # If the user's viewing box length is >= minimum_view_yx and < maximum_view_yx, then this ViewState should be used.
     # If set to None, then these conditions are ignored.
     minimum_range_yx: Union[float, None]
@@ -33,7 +33,7 @@ class ViewState:
         assert type(minimum_yx) is tuple
         assert type(maximum_yx) is tuple
         self.datashade = False
-        self.datashade_downsample_factor = 0.0
+        self.datashade_downsample_factor = 0
         self.minimum_range_yx = minimum_range_yx
         self.maximum_range_yx = maximum_range_yx
         self.minimum_yx = minimum_yx
