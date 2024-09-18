@@ -19,13 +19,7 @@ def interpolate_rgb(color1: np.ndarray, color2: np.ndarray, t: np.ndarray[float]
     assert type(t) is np.ndarray
     assert color1.shape == color2.shape == (3,)
 
-    lerp = t.copy().clip(min=0, max=1)
-    r = (1 - lerp) * color1[0] + lerp * color2[0]
-    g = (1 - lerp) * color1[1] + lerp * color2[1]
-    b = (1 - lerp) * color1[2] + lerp * color2[2]
-    final_colours = np.zeros(t.shape + (3,), np.float32)
-    final_colours[..., 0] = r
-    final_colours[..., 1] = g
-    final_colours[..., 2] = b
+    lerp = t.copy().clip(min=0, max=1)[..., np.newaxis].repeat(3, axis=-1)
+    final_colours = (1 - lerp) * color1 + lerp * color2
 
     return final_colours

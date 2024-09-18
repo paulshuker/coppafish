@@ -83,7 +83,7 @@ With the new, updated coefficients, step 1 is repeated on the remaining pixels u
 The final coefficients, $\mathbf{c}_{pg}$ are normalised pixel-wise by
 
 $$
-\mathbf{c}_{pg} \rightarrow \frac{\mathbf{c}_{pg}}{||\mathbf{S}_{prc}||^{rc} + \lambda_d}
+\mathbf{c}_{pg} \rightarrow \frac{\mathbf{c}_{pg}}{||\mathbf{S}_{p..}|| + \lambda_d}
 $$
 
 $\lambda_d$ should be on the order of background signal, typically $0.4$.

@@ -1,8 +1,15 @@
+import base64
+import io
 import itertools
+import math as maths
+import os
 from typing import Any, Optional
 
+import dash
 from dash import Dash, html, dcc, Output, Input, State
 import dash_daq as daq
+import datashader as ds
+import datashader.transfer_functions as tf
 import numpy as np
 import pandas as pd
 import plotly
@@ -11,6 +18,7 @@ import plotly.graph_objs as go
 import zarr
 
 from . import colours, legend
+from .view_states import ViewState
 from .. import log
 from ..spot_colours import base as spot_colours_base
 from ..omp import base as omp_base
@@ -35,12 +43,12 @@ def _get_index_from_click_data(clickData: Optional[dict[str, Any]]) -> Optional[
     return spot_index
 
 
-def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool = False) -> None:
+def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bool = False) -> None:
     """
     View the notebook's gene calling results by locally hosting a website, powered by dash and plotly.
 
     Args:
-        - nb (Notebook): the notebook to view.
+        - nb_filepath (str): the notebook file path to view.
         - gene_marker_file (str-like, optional): file path to the gene marker file csv. The csv must contain three
             headings: gene_name, colour, and symbol. See plotly/dash for valid colours/symbols. If a gene is not found
             in the file, a warning is issued and is not plotted in the viewer. Default: random gene colours/symbols.
@@ -49,7 +57,9 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
     # TODO: We need a new way of viewing this data. Viewing millions of scatter points is unfeasible like this.
     # Instead, I think try superimpose the points into one image using DataShader, view this image, interact with this
     # one image by simply using the cursor's position with a scipy KDTree.
-    assert type(nb) is Notebook
+    if not os.path.isdir(nb_filepath):
+        raise ValueError(f"Notebook at {nb_filepath} not found")
+    nb = Notebook(nb_filepath)
     assert gene_marker_file is None or type(str(gene_marker_file)) is str
     assert type(debug) is bool
     if not nb.has_page("call_spots"):
@@ -82,20 +92,19 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
                 colour_symbol_combinations.pop(i)
         del n_genes, valid_colours, valid_symbols, colour_symbol_combinations, unique_genes
     # Gather the fused dapi image.
-    dapi_image = nb.stitch.dapi_image[:]
+    print("Gathering background image")
+    dapi_image = nb.stitch.dapi_image[:].astype(np.float32)
     colour_max = np.abs(dapi_image).max()
     colour_min = -np.abs(dapi_image).max()
     dapi_image = (dapi_image - colour_min) / (colour_max - colour_min)
-    dapi_colour_min = np.array((0, 0, 255))
-    dapi_colour_max = np.array((255, 0, 0))
+    dapi_colour_min = np.array((0, 0, 255), np.float32)
+    dapi_colour_max = np.array((255, 0, 0), np.float32)
     # The dapi image colours are explicitly set.
-    dapi_image = colours.interpolate_rgb(dapi_colour_min, dapi_colour_max, dapi_image)
-    filter_images: zarr.Array = nb.filter.images
-    register_flow: zarr.Array = nb.register.flow
-    icp_correction: np.ndarray = nb.register.icp_correction
+    dapi_image_colours = colours.interpolate_rgb(dapi_colour_min, dapi_colour_max, dapi_image)
     use_rounds: list[int] = nb.basic_info.use_rounds
     use_channels: list[int] = nb.basic_info.use_channels
     # Gather spot data.
+    print("Gathering spot data")
     spot_data: dict[str, np.ndarray] = {}
     spot_data["prob/tile"] = nb.ref_spots.tile
     spot_data["prob/local_yxz"] = nb.ref_spots.local_yxz.astype(np.float32)
@@ -121,18 +130,58 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
         spot_data["omp/intensity"] = np.ones_like(spot_data["omp/tile"], np.float32)
         spot_data["omp/colours"] = omp_base.get_all_colours(nb.basic_info, nb.omp)[0]
     del nb
+    min_yxz = np.array([9999, 9999, 99], np.float32)
+    max_yxz = np.array([0, 0, 0], np.float32)
     max_score = 1.0
     for method in methods:
         method_max_score = spot_data[f"{method}/score"].max()
         if method_max_score > max_score:
             max_score = method_max_score
+        method_min_yxz = spot_data[f"{method}/yxz"].min(0)
+        method_max_yxz = spot_data[f"{method}/yxz"].max(0)
+        min_yxz = min_yxz.clip(max=method_min_yxz)
+        max_yxz = max_yxz.clip(min=method_max_yxz)
+    view_states: list[ViewState] = []
+    # Level 1, most zoomed out view.
+    new_state = ViewState(1_200.0, None)
+    new_state.datashade = True
+    new_state.datashade_downsample_factor = 2.0
+    view_states.append(new_state)
+    # Level 2+, each point plotted in a scatter. The image is chunked to improve performance.
+    chunk_size = 1_200.0
+    chunk_overlap = chunk_size // 2
+    x = chunk_overlap
+    y = chunk_overlap
+    while True:
+        minimum_yx = [x - chunk_size, y - chunk_size]
+        if minimum_yx[0] <= 0:
+            minimum_yx[0] = None
+        if minimum_yx[1] <= 0:
+            minimum_yx[1] = None
+        maximum_yx = [x + chunk_size, y + chunk_size]
+        if maximum_yx[0] > dapi_image.shape[1]:
+            maximum_yx[0] = None
+        if maximum_yx[1] > dapi_image.shape[2]:
+            maximum_yx[1] = None
+        new_state = ViewState(None, chunk_size, tuple(minimum_yx), tuple(maximum_yx))
+        view_states.append(new_state)
+        x += chunk_size
+        if x > dapi_image.shape[2]:
+            y += chunk_size
+            x = chunk_overlap
+        if y > dapi_image.shape[1]:
+            break
+    view_states: tuple[ViewState] = tuple(view_states)
+
     # The min and max z planes to show at the start.
     z_planes = [bound_z(mid_z - 1, use_z), bound_z(mid_z + 1, use_z)]
     subplot_options = ("Summary", "Gene Legend", "Colour", "Colour Map")
 
+    print("Building app")
     app = Dash(__name__, title="Coppafish")
+    max_marker_size = 30.0
 
-    # The viewer content is 2d like the napari Viewer. It is the dapi image with spots overlaid.
+    # The viewer content is 2d like the napari Viewer. It is the background (dapi) image with spots overlaid.
     app.layout = [
         dcc.Store(
             id="store-range", data={"xaxis": [0, dapi_image.shape[2]], "yaxis": [0, dapi_image.shape[1]]}
@@ -144,6 +193,10 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
         dcc.Store(id="store-selected-spot", data=None),  # Store the selected spot index.
         dcc.Store(id="store-selected-genes", data=None),  # Store the genes that are currently visible.
         dcc.Store(id="store-selected-genes-last", data=None),  # Store the last gene selections, used by the viewer.
+        dcc.Store(id="store-selected-view-state", data=None),
+        dcc.Store(id="store-all-genes-n-clicks", data=None),  # Store the number of times the button was clicked.
+        dcc.Store(id="store-no-genes-n-clicks", data=None),  # Store the number of times the button was clicked.
+        dcc.Store(id="store-marker-size", data=None),  # Store the selected gene marker size.
         html.Div(
             children=[
                 html.Img(
@@ -168,7 +221,9 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
                 "display": "flex",
                 "flex-direction": "row",
                 "flexwrap": "wrap",
-                "width": "100vw",
+                "width": "96vw",
+                "max-width": "96vw",
+                "height": "75vh",
                 "max-height": "75vh",
             },
             children=[
@@ -222,6 +277,26 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
                     ],
                 ),
                 html.Div(
+                    style={"align-items": "center", "display": "flex", "flex-direction": "column", "width": "80px"},
+                    children=[
+                        html.Label("All genes", style={"display": "flex"}),
+                        html.Button(
+                            id="show-all-genes",
+                            style={"display": "flex", "height": "70%", "width": "90%"},
+                        ),
+                    ],
+                ),
+                html.Div(
+                    style={"align-items": "center", "display": "flex", "flex-direction": "column", "width": "80px"},
+                    children=[
+                        html.Label("No genes", style={"display": "flex"}),
+                        html.Button(
+                            id="show-no-genes",
+                            style={"display": "flex", "height": "70%", "width": "90%"},
+                        ),
+                    ],
+                ),
+                html.Div(
                     style={"align-items": "center", "display": "flex", "flex-direction": "column", "width": "120px"},
                     children=[
                         html.Label("Method", style={"display": "flex"}),
@@ -255,13 +330,23 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
                         html.Label("Score", style={"display": "flex"}),
                         html.Div(
                             dcc.RangeSlider(
-                                0,
+                                0.0,
                                 max_score,
                                 marks={0.0: "0.0", 0.25: "0.25", 0.5: "0.5", 0.75: "0.75", 1.0: "1.0"},
                                 id="score-slider",
                                 value=[max(max_score / 2, 0.4), max_score],
                                 allowCross=False,
                             ),
+                            style={"display": "block", "width": "100%"},
+                        ),
+                    ],
+                ),
+                html.Div(
+                    style={"align-items": "center", "display": "flex", "flex-direction": "column", "width": "160px"},
+                    children=[
+                        html.Label("Marker size", style={"display": "flex"}),
+                        html.Div(
+                            dcc.Slider(0.5, max_marker_size, value=10.0, marks=None, id="marker-size-slider"),
                             style={"display": "block", "width": "100%"},
                         ),
                     ],
@@ -279,16 +364,21 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
 
     def create_main_figure(
         method: str,
+        view_state: ViewState,
         z_bounds: list[int, int],
         score_bounds: list[float, float],
+        gene_marker_size: float,
         stored_view: dict[str, Any],
         selected_genes: Optional[list[bool]],
     ) -> tuple[go.Figure, list[int]]:
         assert type(method) is str
         assert type(methods) is list
+        assert type(view_state) is ViewState
         assert method in methods
         assert type(z_bounds) is list
         assert type(score_bounds) is list
+        assert type(float(gene_marker_size)) is float
+        print(f"{gene_marker_size=}")
         assert type(stored_view) is dict
         assert type(selected_genes) is list or selected_genes is None
         yxz = spot_data[f"{method}/yxz"]
@@ -303,23 +393,75 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
         gene_numbers = gene_numbers[keep]
         labels = [f"{gene_number}: {gene_names[gene_number]}" for gene_number in gene_numbers]
         figure = go.Figure()
-        # figure.add_trace(go.Image(z=dapi_image[bound_z(z_bounds[0], use_z)], opacity=0.5, hoverinfo="none"))
-        # Use WebGL to accelerate the rendering of spots. Especially good when there are > 10,000 spots.
-        figure.add_trace(
-            go.Scattergl(
-                name="",  # Empty name to hide text 'trace_1' when hovering with cursor.
-                y=yxz[:, 0],
-                x=yxz[:, 1],
-                mode="markers",
-                text=labels,
-                marker=dict(
-                    size=10,
-                    color=gene_marker_colours[gene_numbers].tolist(),
-                    symbol=gene_marker_symbols[gene_numbers].tolist(),
-                ),
+        if view_state.datashade:
+            # TODO: Use datashade to plot an image of the gene reads.
+            spot_distributions = pd.DataFrame(dict(x=[], y=[], cat=[]))
+            for g in range(gene_names.size):
+                is_gene_g = gene_numbers == g
+                X = yxz[is_gene_g, 1]
+                Y = yxz[is_gene_g, 0]
+                cat = np.full_like(X, f"{g}")
+                new_data = pd.DataFrame(dict(x=X, y=Y, cat=cat))
+                spot_distributions = pd.concat([spot_distributions, new_data], ignore_index=True)
+            spot_distributions["cat"] = spot_distributions["cat"].astype("category")
+
+            # Projection:
+            x_min = view_state.get_image_slices_yx(dapi_image.shape[1:3])[1].start
+            x_max = view_state.get_image_slices_yx(dapi_image.shape[1:3])[1].stop
+            y_min = view_state.get_image_slices_yx(dapi_image.shape[1:3])[0].start
+            y_max = view_state.get_image_slices_yx(dapi_image.shape[1:3])[0].stop
+            canvas = ds.Canvas(
+                plot_width=dapi_image.shape[2],
+                plot_height=dapi_image.shape[1],
+                x_range=(x_min, x_max),
+                y_range=(y_min, y_max),
+                x_axis_type="linear",
+                y_axis_type="linear",
             )
-        )
-        # Register click event handler
+
+            # Aggregation of points by category (gene index):
+            aggregate = canvas.points(spot_distributions, "x", "y", ds.by("cat", ds.count()))
+            image = tf.shade(aggregate, name="Default colour mapping")
+
+            # Image is converted into a numpy array.
+            image = np.array(image.to_pil())
+            print(f"{image.dtype=}")
+
+            figure.add_trace(go.Image(z=image))
+        if not view_state.datashade:
+            image_slices_yx = view_state.get_image_slices_yx(dapi_image.shape[1:3])
+            print(f"{image_slices_yx=}")
+            figure.add_trace(
+                go.Image(
+                    z=dapi_image_colours[bound_z(z_bounds[0], use_z), image_slices_yx[0], image_slices_yx[1]],
+                    opacity=0.5,
+                    hoverinfo="none",
+                    y0=image_slices_yx[0].start,
+                    x0=image_slices_yx[1].start,
+                )
+            )
+            # Use WebGL to accelerate the rendering of spots. Especially good when there are > 10,000 spots.
+            figure.add_trace(
+                go.Scattergl(
+                    name="",  # Empty name to hide text 'trace_1' when hovering with cursor.
+                    y=yxz[:, 0],
+                    x=yxz[:, 1],
+                    mode="markers",
+                    text=labels,
+                    marker=dict(
+                        size=gene_marker_size,
+                        color=gene_marker_colours[gene_numbers].tolist(),
+                        symbol=gene_marker_symbols[gene_numbers].tolist(),
+                    ),
+                )
+            )
+            # Register click event handler
+            figure.update_layout(
+                dragmode="pan",  # Set dragmode to pan
+                modebar=dict(
+                    remove=["select", "select2d", "lasso2d", "autoscale"]
+                ),  # Remove box select and lasso select
+            )
         figure.update_layout(
             margin=dict(l=0, r=0, t=0, b=0),
             xaxis_title="X",
@@ -344,8 +486,6 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
             ),
             plot_bgcolor="rgba(0,0,0,0)",  # Transparent plot background
             paper_bgcolor="rgba(0,0,0,0)",  # Transparent paper background
-            dragmode="pan",  # Set dragmode to pan
-            modebar=dict(remove=["select", "select2d", "lasso2d"]),  # Remove box select and lasso select
         )
         return figure, spot_indices
 
@@ -419,7 +559,9 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
             figure.add_annotation(
                 go.layout.Annotation(x=0, y=1, text="Gene legend", font={"size": 25, "color": "black"}, **kwargs)
             )
-            yx_positions = legend.get_gene_scatter_positions(gene_marker_symbols.size)
+            yx_positions = legend.get_gene_scatter_positions(
+                gene_marker_symbols.size, n_columns=maths.floor(maths.sqrt(gene_marker_symbols.size))
+            )
             yx_positions /= np.max(yx_positions, axis=0, keepdims=True)
             opacity = [1.0] * gene_names.size
             if selected_genes is not None:
@@ -431,15 +573,18 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
                 x=yx_positions[:, 1],
                 mode="markers+text",
                 marker=dict(
-                    size=400 / gene_names.size,
+                    size=17 * maths.sqrt(gene_names.size),
                     color=gene_marker_colours.tolist(),
                     symbol=gene_marker_symbols.tolist(),
                     opacity=opacity,
                 ),
                 text=gene_names.tolist(),
-                textfont=dict(size=240 / gene_names.size),
+                textfont=dict(size=max(14 * maths.sqrt(gene_names.size), 1.0)),
                 textposition="bottom center",
-                hoverinfo="none",
+                name="",
+                hoverinfo="text",
+                hovertemplate="<b>%{customdata}</b>",
+                customdata=gene_names.tolist(),
             )
         elif subplot_choice == "Colour":
             figure.add_annotation(
@@ -447,24 +592,16 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
             )
             if selected_spot is None:
                 return figure
-            spot_yxz = spot_data[f"{method}/local_yxz"][[selected_spot]]
+            spot_yxz = spot_data[f"{method}/local_yxz"][selected_spot]
             tile = spot_data[f"{method}/tile"][selected_spot].item()
-            colour_wrong = spot_colours_base.get_spot_colours_new(
-                spot_yxz,
-                filter_images,
-                register_flow,
-                icp_correction,
-                tile,
-                use_rounds,
-                use_channels,
-                out_of_bounds_value=0,
-            )[0]
             colour = spot_data[f"{method}/colours"][selected_spot]
-            # FIXME: Why tf does colour_wrong != colour.
             if np.allclose(colour, 0):
                 return figure
             return px.imshow(
-                colour.T, zmin=-np.abs(colour).max(), title="Spot colour", color_continuous_scale="bluered"
+                colour.T,
+                zmin=-np.abs(colour).max(),
+                title=f"Spot colour {tuple(spot_yxz)}, {tile=}",
+                color_continuous_scale="bluered",
             )
         else:
             raise NotImplementedError(f"Subplot {subplot_choice} is not implemented")
@@ -479,22 +616,26 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
         Output("store-spot-indices", "data"),
         Output("store-selected-spot", "data"),
         Output("store-selected-genes-last", "data"),
+        Output("store-selected-view-state", "data"),
+        Output("store-marker-size", "data"),
         Input("z-slider", "value"),
         Input("score-slider", "value"),
+        Input("marker-size-slider", "value"),
         Input("method-choice", "value"),
         Input("viewer", "clickData"),
         Input("store-selected-genes", "data"),
-        State("store-range", "data"),  # Use stored view range to preserve view
+        Input("store-range", "data"),
         State("store-method", "data"),
         State("store-z-bounds", "data"),
         State("store-score-bounds", "data"),
-        State("store-spot-indices", "data"),
         State("store-selected-genes-last", "data"),
-        State("viewer", "figure"),
+        State("store-selected-view-state", "data"),
+        State("store-marker-size", "data"),
     )
     def update_viewer(
         z_bounds: list[int, int],
         score_bounds: list[float, float],
+        gene_marker_size: float,
         method_name: str,
         clickData: Optional[dict[str, Any]],
         selected_genes: list[int],
@@ -502,25 +643,53 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
         last_method: str,
         last_z_bounds: list[int, int],
         last_score_bounds: list[float, float],
-        last_spot_indices: list[int],
         last_selected_genes: list[int],
-        last_figure: go.Figure,
+        last_selected_view_state: int,
+        last_gene_marker_size: float,
     ):
         method = name_to_methods[method_name]
-        new_figure = last_figure
-        spot_indices = last_spot_indices
+        new_figure = dash.no_update
+        spot_indices = dash.no_update
         spot_index = _get_index_from_click_data(clickData)
+        view_ranges_yx = (stored_view["xaxis"], stored_view["yaxis"])
+        print(f"{view_ranges_yx=}")
+        selected_view_state = np.array([state.is_on(view_ranges_yx) for state in view_states]).nonzero()[0]
+        if selected_view_state.size == 0:
+            selected_view_state = [0]
+        selected_view_state: int = selected_view_state[0]
+        print(f"{selected_view_state=}")
         if (
             method != last_method
             or z_bounds != last_z_bounds
             or score_bounds != last_score_bounds
             or selected_genes != last_selected_genes
+            or selected_view_state != last_selected_view_state
+            or gene_marker_size != last_gene_marker_size
         ):
             # The main figure is only updated when it must be updated. This is done to avoid performance impacts from
             # too many refreshes when the input has no effect on the viewer, like clicking on a spot.
+            print(f"Updating figure")
             spot_index = None
-            new_figure, spot_indices = create_main_figure(method, z_bounds, score_bounds, stored_view, selected_genes)
-        return new_figure, z_bounds, score_bounds, method, spot_indices, spot_index, selected_genes
+            new_figure, spot_indices = create_main_figure(
+                method,
+                view_states[selected_view_state],
+                z_bounds,
+                score_bounds,
+                gene_marker_size,
+                stored_view,
+                selected_genes,
+            )
+        return (
+            new_figure,
+            z_bounds,
+            score_bounds,
+            method,
+            spot_indices,
+            spot_index,
+            selected_genes,
+            selected_view_state,
+            gene_marker_size,
+        )
 
     @app.callback(
         Output("subplot", "figure"),
@@ -547,13 +716,34 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
     @app.callback(
         Output("store-selected-genes", "data"),
         Output("subplot", "clickData"),
+        Output("store-all-genes-n-clicks", "data"),
+        Output("store-no-genes-n-clicks", "data"),
         Input("subplot", "clickData"),
+        Input("show-all-genes", "n_clicks"),
+        Input("show-no-genes", "n_clicks"),
         State("subplot-choice", "value"),
         State("store-selected-genes", "data"),
+        State("store-all-genes-n-clicks", "data"),
+        State("store-no-genes-n-clicks", "data"),
     )
-    def clicked_subplot(clickData: dict[str, Any], subplot: str, last_selected_genes: list[bool]):
-        # The subplot viewer was clicked on. Whether anything happens depends on the type of subplot displayed.
+    def clicked_subplot_or_button(
+        clickData: dict[str, Any],
+        all_genes_n_clicks: int,
+        no_genes_n_clicks: int,
+        subplot: str,
+        last_selected_genes: list[bool],
+        last_all_genes_n_clicks: int,
+        last_no_genes_n_clicks: int,
+    ):
+        # The subplot viewer was clicked on or a button was pressed related to subplot changes.
+        # Whether anything happens depends on the type of subplot displayed.
         selected_genes = last_selected_genes
+        if all_genes_n_clicks != last_all_genes_n_clicks:
+            # Select all genes button was clicked.
+            selected_genes = [True] * gene_names.size
+        if no_genes_n_clicks != last_no_genes_n_clicks:
+            # Select no genes button was clicked.
+            selected_genes = [False] * gene_names.size
         if selected_genes is None:
             # By default, show all genes.
             selected_genes = [True] * gene_names.size
@@ -565,22 +755,22 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
                 # Toggle the clicked gene.
                 selected_genes[spot_index] = not selected_genes[spot_index]
         # Once the click data has been resolved, the click data is forgotten so the same point can clicked again.
-        return selected_genes, None
-
-    @app.callback(
-        Output("subplot", "style"),
-        Input("subplot-toggle", "on"),
-    )
-    def toggle_subplot(on: bool) -> None:
-        if on:
-            return {"display": "flex"}
-        return {"display": "none"}
+        return selected_genes, None, all_genes_n_clicks, no_genes_n_clicks
 
     @app.callback(
         Output("viewer", "style"),
         Input("viewer-toggle", "on"),
     )
     def toggle_viewer(on: bool) -> None:
+        if on:
+            return {"display": "flex"}
+        return {"display": "none"}
+
+    @app.callback(
+        Output("subplot", "style"),
+        Input("subplot-toggle", "on"),
+    )
+    def toggle_subplot(on: bool) -> None:
         if on:
             return {"display": "flex"}
         return {"display": "none"}
@@ -597,6 +787,7 @@ def view_web(nb: Notebook, gene_marker_file: Optional[str] = None, debug: bool =
                 "yaxis": [relayout_data["yaxis.range[0]"], relayout_data["yaxis.range[1]"]],
             }
             return new_data
-        return {"xaxis": [0, dapi_image.shape[2]], "yaxis": [0, dapi_image.shape[1]]}
+        new_data = {"xaxis": [min_yxz[1], max_yxz[1]], "yaxis": [min_yxz[0], max_yxz[0]]}
+        return new_data
 
-    app.run(debug=True, host="0.0.0.0", port="8080")
+    app.run(debug=debug, host="0.0.0.0", port="8080")

@@ -3,7 +3,7 @@ from typing import List, Tuple, Union, Any, Optional
 
 import numpy as np
 import torch
-from tqdm import tqdm
+import tqdm
 import zarr
 
 from .. import utils
@@ -167,7 +167,7 @@ def remove_background(spot_colours: np.ndarray) -> Tuple[np.ndarray, np.ndarray]
     n_spots = spot_colours.shape[0]
     background_noise = np.percentile(spot_colours, 25, axis=1)
     # Loop through all channels and remove the background from each channel.
-    for c in tqdm(range(spot_colours.shape[2])):
+    for c in tqdm.tqdm(range(spot_colours.shape[2])):
         background_code = np.zeros(spot_colours[0].shape)
         background_code[:, c] = 1
         # Remove the component of the background from the spot colour for each spot
@@ -199,8 +199,9 @@ def get_spot_colours_new_safe(
     assert yxz.shape[1] == 3
     batch_size = maths.floor(utils.system.get_available_memory() * 1.3e7 / (n_channels_use * n_rounds_use))
     n_batches = maths.ceil(yxz.shape[0] / batch_size)
+    quiet = n_batches == 1
     colours = None
-    for i in range(n_batches):
+    for i in tqdm.trange(n_batches, desc=f"Getting spot colours", unit="batch", disable=quiet):
         index_min, index_max = i * batch_size, min((i + 1) * batch_size, yxz.shape[0])
         i_colours = get_spot_colours_new(yxz=yxz[index_min:index_max], *args, **kwargs)
         if colours is None:
@@ -403,7 +404,7 @@ def get_spot_colours(
     image = torch.tensor(image, dtype=torch.float32)
 
     # begin the loop over rounds and channels
-    for r in tqdm(range(n_use_rounds), total=n_use_rounds, desc="Round Loop"):
+    for r in tqdm.tqdm(range(n_use_rounds), total=n_use_rounds, desc="Round Loop"):
         # initialize the coordinates for the round
         yxz_round_r = torch.zeros((n_use_channels, n_spots, 3), dtype=torch.float32)
         # the flow is the same for all channels in the same round. Therefore, only need to read it once.
