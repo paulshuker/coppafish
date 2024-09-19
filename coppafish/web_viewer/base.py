@@ -102,6 +102,7 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
     dapi_colour_max = np.array((255, 0, 0), np.float32)
     # The dapi image colours are explicitly set.
     dapi_image_colours = colours.interpolate_rgb(dapi_colour_min, dapi_colour_max, dapi_image)
+    dapi_image_colours = dapi_image_colours.astype(np.float16)
     use_rounds: list[int] = nb.basic_info.use_rounds
     use_channels: list[int] = nb.basic_info.use_channels
     # Gather spot data.
@@ -144,12 +145,13 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
         max_yxz = max_yxz.clip(min=method_max_yxz)
     view_states: list[ViewState] = []
     # Level 1, most zoomed out view.
-    new_state = ViewState(1_200.0, None)
+    min_range_level_1 = 1_200.0
+    new_state = ViewState(min_range_level_1, None)
     new_state.datashade = True
     new_state.datashade_downsample_factor = 3
     view_states.append(new_state)
     # Level 2+, each point plotted in a scatter. The image is chunked to improve performance.
-    chunk_size = 1_200.0
+    chunk_size = min_range_level_1
     chunk_overlap = chunk_size // 2
     x = chunk_overlap
     y = chunk_overlap
@@ -231,15 +233,26 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
                 html.Div(
                     style={
                         # "flex": 1,
+                        "padding": "0",
+                        "margin": "0",
                     },
                     children=[
                         dcc.Graph(
                             id="viewer",
-                            style={"width": "69%"},
+                            style={"width": "69%", "max-width": "100%", "height": "100%"},
+                            config=dict(
+                                modeBarButtonsToRemove=["select2d", "lasso2d", "select2d", "autoscale"],
+                                # FIXME: Zooming using scroll wheel does weird shit to the figure's axes.
+                                # scrollZoom=True,
+                            ),
                         )
                     ],
                 ),
-                dcc.Graph(id="subplot", style={"display": "flex", "width": "28%"}, config={"displayModeBar": False}),
+                dcc.Graph(
+                    id="subplot",
+                    style={"display": "flex", "width": "28%", "max-width": "28%"},
+                    config={"displayModeBar": False},
+                ),
             ],
         ),
         # A slider to select the z planes to view.
@@ -379,7 +392,6 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
         assert type(z_bounds) is list
         assert type(score_bounds) is list
         assert type(float(gene_marker_size)) is float
-        print(f"{gene_marker_size=}")
         assert type(stored_view) is dict
         assert type(selected_genes) is list or selected_genes is None
         yxz = spot_data[f"{method}/yxz"]
@@ -394,7 +406,7 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
         gene_numbers = gene_numbers[keep]
         labels = [f"{gene_number}: {gene_names[gene_number]}" for gene_number in gene_numbers]
         figure = go.Figure()
-        if view_state.datashade:
+        if view_state.datashade and keep.sum() > 0:
             spot_distributions = pd.DataFrame(dict(x=[], y=[], cat=[]))
             for g in range(gene_names.size):
                 is_gene_g = gene_numbers == g
@@ -421,15 +433,35 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
 
             # Aggregation of points by category (gene index):
             aggregate = canvas.points(spot_distributions, "x", "y", ds.by("cat", ds.count()))
-            image = tf.shade(aggregate, name="Default colour mapping")
 
-            # Upsample image.
-            image = image.to_pil().resize((dapi_image.shape[2], dapi_image.shape[1]), PIL.Image.NEAREST)
+            # A different colour for each gene.
+            colour_key = {
+                g: list(map(int, str(gene_marker_colours[g][5:-1]).split(", ")[:3])) for g in range(gene_names.size)
+            }
+            image = tf.shade(aggregate, name="Default colour mapping", cmap=colour_key)
+            image = tf.set_background(image, "white")
+
+            # # Upsample image.
+            # image = image.to_pil().resize((dapi_image.shape[2], dapi_image.shape[1]), PIL.Image.NEAREST)
 
             # Image is converted into a numpy array.
             image = np.array(image)
 
-            figure.add_trace(go.Image(z=image))
+            # R, G, and B values are extracted from the uint32 values.
+            image_rgb = np.zeros(image.shape + (3,), np.uint8)
+            image_rgb[..., 0] = (image >> 24) & 0xFF
+            image_rgb[..., 1] = (image >> 16) & 0xFF
+            image_rgb[..., 2] = (image >> 8) & 0xFF
+
+            # The image is stretched to reach full viewing size.
+            figure.add_trace(
+                go.Image(
+                    z=image_rgb,
+                    dx=view_state.datashade_downsample_factor,
+                    dy=view_state.datashade_downsample_factor,
+                    hoverinfo="none",
+                )
+            )
         if not view_state.datashade:
             image_slices_yx = view_state.get_image_slices_yx(dapi_image.shape[1:3])
             print(f"{image_slices_yx=}")
@@ -457,13 +489,13 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
                     ),
                 )
             )
-            # Register click event handler
-            figure.update_layout(
-                dragmode="pan",  # Set dragmode to pan
-                modebar=dict(
-                    remove=["select", "select2d", "lasso2d", "autoscale"]
-                ),  # Remove box select and lasso select
-            )
+            # # Register click event handler
+            # figure.update_layout(
+            #     dragmode="pan",  # Set dragmode to pan
+            #     modebar=dict(
+            #         remove=["select", "select2d", "lasso2d", "resetScale2d"]
+            #     ),  # Remove box select and lasso select
+            # )
         figure.update_layout(
             margin=dict(l=0, r=0, t=0, b=0),
             xaxis_title="X",
@@ -488,6 +520,7 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
             ),
             plot_bgcolor="rgba(0,0,0,0)",  # Transparent plot background
             paper_bgcolor="rgba(0,0,0,0)",  # Transparent paper background
+            dragmode="pan",
         )
         return figure, spot_indices
 
@@ -602,6 +635,7 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
             return px.imshow(
                 colour.T,
                 zmin=-np.abs(colour).max(),
+                zmax=np.abs(colour).max(),
                 title=f"Spot colour {tuple(spot_yxz)}, {tile=}",
                 color_continuous_scale="bluered",
             )
@@ -655,10 +689,11 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
         spot_index = _get_index_from_click_data(clickData)
         view_ranges_yx = (stored_view["xaxis"], stored_view["yaxis"])
         print(f"{view_ranges_yx=}")
-        selected_view_state = np.array([state.is_on(view_ranges_yx) for state in view_states]).nonzero()[0]
-        if selected_view_state.size == 0:
-            selected_view_state = [0]
-        selected_view_state: int = selected_view_state[0]
+        selected_view_states = np.array([state.is_on(view_ranges_yx) for state in view_states]).nonzero()[0]
+        if selected_view_states.size == 0:
+            selected_view_state = 0
+        else:
+            selected_view_state = selected_view_states[selected_view_states.size // 2].item()
         print(f"{selected_view_state=}")
         if (
             method != last_method
@@ -788,8 +823,12 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
                 "xaxis": [relayout_data["xaxis.range[0]"], relayout_data["xaxis.range[1]"]],
                 "yaxis": [relayout_data["yaxis.range[0]"], relayout_data["yaxis.range[1]"]],
             }
-            return new_data
-        new_data = {"xaxis": [min_yxz[1], max_yxz[1]], "yaxis": [min_yxz[0], max_yxz[0]]}
+        else:
+            # The viewing width divided by the viewing height.
+            starting_ratio = 2.4
+            y_range = max_yxz[0] - min_yxz[0]
+            # View the data by fitting all the x data in the view.
+            new_data = {"xaxis": [min_yxz[1], min_yxz[1] + y_range * starting_ratio], "yaxis": [min_yxz[0], max_yxz[0]]}
         return new_data
 
-    app.run(debug=debug, host="0.0.0.0", port="8080")
+    app.run(debug=True, dev_tools_hot_reload=debug, host="localhost", port="8080")
