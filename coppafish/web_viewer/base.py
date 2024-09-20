@@ -831,4 +831,4 @@ def view_web(nb_filepath: str, gene_marker_file: Optional[str] = None, debug: bo
             new_data = {"xaxis": [min_yxz[1], min_yxz[1] + y_range * starting_ratio], "yaxis": [min_yxz[0], max_yxz[0]]}
         return new_data
 
-    app.run(debug=True, dev_tools_hot_reload=debug, host="localhost", port="8080")
+    app.run(debug=debug, host="localhost", port="8080")
