@@ -405,13 +405,16 @@ The chain of transforms is captured in the figure below:
 
 
 ## Diagnostics
+
 Problems in registration can ruin several downstream analyses. These problems can be  diagnosed by looking at the Registration Viewer, as follows:
 
-```pseudo
+```py
 from coppafish import Notebook, RegistrationViewer
-nb_file = "path/to/notebook"
+
+nb_file = "/path/to/notebook"
+config_file = "/path/to/config.ini"
 nb = Notebook(nb_file)
-rv = RegistrationViewer(nb)
+rv = RegistrationViewer(nb, config_file)
 ```
 
 This will open a viewer with the following home screen:
@@ -595,3 +598,36 @@ These show the point clouds used to compute the round corrections $B_r$ and chan
         <img src="https://github.com/user-attachments/assets/5cbdbd4d-9373-4fb4-ac34-594203b1512b" width="600" />
         <br />
         </p>
+
+## Registered Image Diagnostic
+
+The RegistrationViewer is great for diagnosing issues with the overall registration of images. But, if you want a 
+particular area of interest, you can view the final registered images for every round/channel in a specific region of 
+a tile. To do this
+
+```py
+from coppafish import Notebook
+from coppafish.plot import view_registered_images
+
+nb = Notebook("/path/to/notebook")
+view_registered_images(nb, tile)
+```
+
+where tile is the tile's index. By default, a 400x400x5 subset is gathered with bottom-left corner at (0, 0, 0). But, 
+you can specify the region of interest by 
+
+```py
+from coppafish import Notebook
+from coppafish.plot import view_registered_images
+
+nb = Notebook("/path/to/notebook")
+view_registered_images(nb, tile, ((ymin, ymax), (xmin, xmax), (zmin, zmax)))
+```
+
+where all minima and maxima must be integer numbers. The maxima are exclusive. As an example, 
+`#!py ((2, 16), (0, 10), (5, 16))` would gather a 14x10x11 subset. See the 
+[docstring](https://github.com/paulshuker/coppafish/blob/HEAD/coppafish/plot/register/registered_image.py) for further 
+detail.
+
+Use the layer list on the left of the napari window to toggle the visibility of images.
+

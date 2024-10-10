@@ -1,6 +1,6 @@
 2024/mm/dd Version 1 Major Release (v1.0.0):
  * General: From version 1.0.0 onwards, coppafish will automatically detect incompatible notebook versions. A suggested 
-    course of action is given if a compatibility problem is found.
+    course of action is given if a compatibility problem is found during runtime.
  * General: Python 3.11 is now supported.
  * General: Python 3.9 is no longer supported.
  * General: Presequence channels are no longer supported.

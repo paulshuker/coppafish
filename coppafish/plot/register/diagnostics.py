@@ -14,8 +14,8 @@ from superqt import QRangeSlider
 import torch
 from tqdm import tqdm
 
-from coppafish.setup.notebook import Notebook
 from coppafish.setup import file_names
+from coppafish.setup.notebook import Notebook
 from coppafish.spot_colours.base import apply_affine, apply_flow_new
 
 

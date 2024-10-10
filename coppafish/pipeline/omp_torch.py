@@ -149,7 +149,7 @@ def run_omp(
             while index_min < yxz_all.shape[0]:
                 if n_subset_pixels is None:
                     n_subset_pixels: int = maths.floor(
-                        utils.system.get_available_memory(device) * 8e8 / (n_genes * n_rounds_use * n_channels_use)
+                        utils.system.get_available_memory(device) * 2e9 / (n_genes * n_rounds_use * n_channels_use)
                     )
                 log.debug(f"==== Subset {index_subset} ====")
                 log.debug(f"Getting spot colours")
@@ -231,7 +231,7 @@ def run_omp(
             spot = torch.zeros_like(mean_spot, dtype=torch.int16)
             spot[mean_spot >= config["shape_sign_thresh"]] = 1
             edge_counts = spots_torch.count_edge_ones(spot)
-            if edge_counts > 0:
+            if edge_counts >= 10:
                 log.warn(
                     f"The spot contains {edge_counts} ones on the x/y edges. You may need to increase spot_shape in"
                     + " the OMP config to avoid spot cropping. See _omp.pdf for more detail."

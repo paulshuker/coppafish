@@ -19,10 +19,10 @@ def call_reference_spots(
 ) -> Tuple[NotebookPage, NotebookPage]:
     """
     Function to do gene assignments to reference spots. In doing so we compute some important parameters for the
-    downstream analysis.
+    downstream OMP analysis also.
 
     Args:
-        config: dict
+        - config: dict
             The configuration dictionary for the call spots page. Should contain the following keys:
             - gene_prob_threshold: float
                 The threshold for the gene probability score.
@@ -33,12 +33,9 @@ def call_reference_spots(
                 The concentration parameter for the parallel direction of the prior.
             - concentration_param_perpendicular: float
                 The concentration parameter for the perpendicular direction of the prior.
-        nbp_ref_spots: NotebookPage
-            The reference spots notebook page. This will be altered in the process.
-        nbp_file: NotebookPage
-            The file names notebook page.
-        nbp_basic: NotebookPage
-            The basic info notebook page.
+        - nbp_ref_spots (NotebookPage): `ref_spots` notebook page.
+        - nbp_file (NotebookPage): `file_names` notebook page.
+        - nbp_basic (NotebookPage): `basic_info` notebook page.
 
     Returns:
         nbp: NotebookPage
@@ -160,18 +157,19 @@ def call_reference_spots(
     # normalise the constrained bled codes
     bled_codes /= np.linalg.norm(bled_codes, axis=(1, 2))[:, None, None]
 
-    # 6. compute the scale factor Q_trc maximising the similarity between the tile independent codes and the constrained
-    # bled codes
+    # 6. Compute the scale factor Q_trc maximising the similarity between the tile independent codes and the
+    # constrained bled codes.
     tile_scale = np.ones((n_tiles, n_rounds, n_channels_use), np.float32)
     for t, r, c in itertools.product(use_tiles, range(n_rounds), range(n_channels_use)):
-        relevant_genes = np.where(gene_codes[:, r] == config["target_values"][c])[0]
+        relevant_genes = np.where(gene_codes[:, r] == config["d_max"][c])[0]
         n_spots_per_gene = np.array(
             [
                 np.sum((prob_mode_initial == g) & (prob_score_initial > prob_threshold) & (spot_tile == t))
                 for g in relevant_genes
             ]
         )
-        if np.sum(n_spots_per_gene) == 0:
+        if n_spots_per_gene.sum() == 0:
+            log.warn(f"No relevant spots found to calculate tile scale factor Q for {t=}, {r=}, {c=}")
             continue
         tile_scale[t, r, c] = np.sum(
             np.sqrt(n_spots_per_gene) * bled_codes[relevant_genes, r, c] * free_bled_codes[relevant_genes, t, r, c]
