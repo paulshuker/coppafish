@@ -56,7 +56,7 @@ is a config parameter.
 The calculated auto thresholds can be seen from the notebook. For tile `t`, round `r`, channel `c`, the `auto_thresh` 
 value is saved as `float32` at
 
-```python
+```py
 from coppafish import Notebook
 
 nb = Notebook("/path/to/notebook")
@@ -70,7 +70,7 @@ see the spot detection results. You can select any tile/round/channel combinatio
 round/channel is shown. To display the viewer, create a Python script with the following code and call it 
 `find_spots_plot.py`:
 
-```python
+```py
 from coppafish import Notebook
 from coppafish.plot import view_find_spots
 
@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
 Run the script from your coppafish environment
 
-```shell
+```terminal
 python find_spots_plot.py
 ```
 

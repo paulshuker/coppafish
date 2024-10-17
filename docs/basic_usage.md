@@ -95,18 +95,19 @@ There are configuration variables used throughout the coppafish pipeline. Most o
 but some must be set by the user and you may wish to tweak other values for better performance. Save the config text 
 file, like `dataset_name.ini`. The config file should contain, at the minimum:
 
-```text
+```ini
 [file_names]
-input_dir = path/to/input/data
-output_dir = path/to/output/directory
-tile_dir = path/to/tile/directory
-round = 0, 1, 2, 3, 4, 5, 6 ; Go up to the number of sequencing rounds used
+input_dir = /path/to/input/data
+output_dir = /path/to/output/directory
+tile_dir = /path/to/tile/directory
+; Go up to the number of sequencing rounds used.
+round = round0, round1, round2, round3, round4, round5, round6
+; 'anchor' given here since the anchor file is called anchor.npy.
 anchor = anchor
 raw_extension = .npy
-raw_metadata = path/to/metadata.json
+raw_metadata = /path/to/metadata.json
 
 [basic_info]
-is_3d = True
 dye_names = dye_0, dye_1, dye_2, dye_3
 use_rounds = 0, 1, 2, 3, 4, 5, 6
 use_z = 0, 1, 2, 3, 4
@@ -136,13 +137,13 @@ at <a href="https://github.com/paulshuker/coppafish/blob/HEAD/coppafish/setup/se
 
 Coppafish must be run with a [configuration](basic_usage.md#configuration) file. In the terminal
 
-```console
+```terminal
 python3 -m coppafish /path/to/config.ini
 ```
 
 Or programmatically, using a python script
 
-``` python
+```py
 from coppafish import run_pipeline
 
 run_pipeline("/path/to/config.ini")

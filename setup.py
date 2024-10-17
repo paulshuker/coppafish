@@ -34,7 +34,7 @@ setup(
         "magicgui",
         "matplotlib",
         "mplcursors",
-        "napari",
+        "napari[pyqt5]",
         "nd2",
         "numpy<2.0.0",
         "numpy_indexed",

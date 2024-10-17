@@ -165,13 +165,12 @@ class Notebook:
             raise ValueError(f"Page name {page_name} not found")
         if prompt:
             earlier_pages = self._get_page_names_after_page(page_name)
-            if len(earlier_pages) == 0:
-                return
-            print(f"The notebook contains pages {', '.join(earlier_pages)} that were added after page {page_name}.")
-            result = input("Do you want to delete these pages too (recommended)? (y/n): ")
-            if result == "y":
-                for earlier_page_name in earlier_pages:
-                    self.delete_page(earlier_page_name, prompt=False)
+            if len(earlier_pages) > 0:
+                print(f"The notebook contains pages {', '.join(earlier_pages)} that were added after page {page_name}.")
+                result = input("Do you want to delete these pages too (recommended)? (y/n): ")
+                if result == "y":
+                    for earlier_page_name in earlier_pages:
+                        self.delete_page(earlier_page_name, prompt=False)
         page_name_directory = self._get_page_directory(page_name)
         shutil.rmtree(page_name_directory)
         self.__delattr__(page_name)

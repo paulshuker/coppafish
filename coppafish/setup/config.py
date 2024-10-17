@@ -142,7 +142,7 @@ _options = {
         "shape_isolation_distance_yx": "int",
         "shape_isolation_distance_z": "maybe_int",
         "shape_coefficient_threshold": "number",
-        "shape_sign_thresh": "number",
+        "mean_spot_thresh": "number",
         "score_threshold": "number",
     },
     "thresholds": {
