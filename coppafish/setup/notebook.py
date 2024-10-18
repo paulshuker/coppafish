@@ -84,7 +84,7 @@ class Notebook:
         ],
     }
 
-    def __init__(self, notebook_dir: str, config_path: Optional[str] = None) -> None:
+    def __init__(self, notebook_dir: str, config_path: Optional[str] = None, must_exist: bool = False) -> None:
         """
         Load the notebook found at the given directory. Or, if the directory does not exist, create the directory.
 
@@ -92,9 +92,12 @@ class Notebook:
             - notebook_dir (str): the notebook directory to write into and/or load from.
             - config_path (str, optional): path to the pipeline's config file. This must be given for new pages to be
                 added, i.e. during the pipeline runtime. Default: not given.
+            - must_exists (bool, optional): crash if the notebook does not already exist. Default: false.
         """
         assert type(notebook_dir) is str
         assert config_path is None or type(config_path) is str
+        if must_exist and not os.path.isdir(notebook_dir):
+            raise FileNotFoundError(f"No notebook at {notebook_dir}")
 
         self._config_path = None
         if config_path is not None:
@@ -165,13 +168,12 @@ class Notebook:
             raise ValueError(f"Page name {page_name} not found")
         if prompt:
             earlier_pages = self._get_page_names_after_page(page_name)
-            if len(earlier_pages) == 0:
-                return
-            print(f"The notebook contains pages {', '.join(earlier_pages)} that were added after page {page_name}.")
-            result = input("Do you want to delete these pages too (recommended)? (y/n): ")
-            if result == "y":
-                for earlier_page_name in earlier_pages:
-                    self.delete_page(earlier_page_name, prompt=False)
+            if len(earlier_pages) > 0:
+                print(f"The notebook contains pages {', '.join(earlier_pages)} that were added after page {page_name}.")
+                result = input("Do you want to delete these pages too (recommended)? (y/n): ")
+                if result == "y":
+                    for earlier_page_name in earlier_pages:
+                        self.delete_page(earlier_page_name, prompt=False)
         page_name_directory = self._get_page_directory(page_name)
         shutil.rmtree(page_name_directory)
         self.__delattr__(page_name)

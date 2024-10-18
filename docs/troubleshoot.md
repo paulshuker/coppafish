@@ -16,7 +16,7 @@ TypeError: byte indices must be integers or slices, not tuple
 ```
 
 will occur when trying to load the notebook. To fix this issue, delete the corrupted notebook, rename the backup
-notebook called `notebook_backup.npz` to the original notebook name and continue from there.
+notebook called `notebook_backup` to the original notebook name and continue from there.
 
 ## Cannot open napari issues
 

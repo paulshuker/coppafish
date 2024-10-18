@@ -1,102 +1,105 @@
-import numpy as np
+import matplotlib as mpl
 from matplotlib import pyplot as plt
-from ...setup.notebook import Notebook
-from .spot_colours import ColorPlotBase
+from matplotlib.widgets import TextBox
+import numpy as np
+
+from ..results_viewer.subplot import Subplot
+from ...setup.notebook_page import NotebookPage
 
 
-def ViewBleedMatrix(nb: Notebook):
-    """
-    Diagnostic to plot `bleed_matrix`.
-    Args:
-        nb: Notebook containing experiment details. Must have run at least as far as `call_reference_spots`.
-    """
-    plt.style.use("dark_background")
-    bleed_matrix_raw = nb.call_spots.bleed_matrix_raw
-    bleed_matrix_initial = nb.call_spots.bleed_matrix_initial
-    bleed_matrix = nb.call_spots.bleed_matrix
-
-    # create figure
-    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
-    ax[0].imshow(bleed_matrix_raw.T, cmap="viridis")
-    ax[0].set_title("Raw Bleed Matrix")
-    ax[1].imshow(bleed_matrix_initial.T, cmap="viridis")
-    ax[1].set_title("Initial Bleed Matrix")
-    ax[2].imshow(bleed_matrix.T, cmap="viridis")
-    ax[2].set_title("Final Bleed Matrix")
-
-    # add x and y labels and ticks
-    dye_names = nb.basic_info.dye_names
-    use_channels = nb.basic_info.use_channels
-    for i in range(3):
-        ax[i].set_xticks(ticks=np.arange(len(dye_names)), labels=dye_names, rotation=45)
-        ax[i].set_yticks(ticks=np.arange(len(use_channels)), labels=use_channels)
-        ax[i].set_xlabel("Dye")
-        ax[i].set_ylabel("Channel")
-
-    # add super title
-    fig.suptitle("Bleed Matrix")
-
-    plt.show()
-
-
-class view_bled_codes(ColorPlotBase):
-    def __init__(self, nb: Notebook):
+class ViewBleedMatrix(Subplot):
+    def __init__(self, nbp_basic_info: NotebookPage, nbp_call_spots: NotebookPage, show: bool = True):
         """
-        Diagnostic to show `bled_codes` with and without `gene_efficiency` applied for all genes.
-        Change gene by scrolling with mouse.
+        Diagnostic to plot `nb.call_spots.bleed_matrix`.
 
         Args:
-            nb: Notebook containing experiment details. Must have run at least as far as `call_reference_spots`.
+            nbp_basic_info (NotebookPage): `basic_info` notebook page.
+            nbp_call_spots (NotebookPage): `call_spots` notebook page.
+            show (bool, optional): show the figure after creating. Set false for unit testing. Default: true.
         """
-        plt.style.use("dark_background")
+        bleed_matrix_raw = nbp_call_spots.bleed_matrix_raw
+        bleed_matrix_initial = nbp_call_spots.bleed_matrix_initial
+        bleed_matrix = nbp_call_spots.bleed_matrix
 
-        self.n_genes = nb.call_spots.bled_codes.shape[0]
-        self.gene_names = nb.call_spots.gene_names
-        self.use_rounds = nb.basic_info.use_rounds
-        bled_codes = nb.call_spots.bled_codes
-        bled_codes_initial = nb.call_spots.bleed_matrix[nb.call_spots.gene_codes]
-        bled_codes_initial /= np.linalg.norm(bled_codes_initial, axis=(1, 2), keepdims=True)
-        # move gene index to last so scroll over genes. After this shape is n_rounds x n_channels x n_genes
-        bled_codes = np.moveaxis(bled_codes, 0, -1)
-        bled_codes_initial = np.moveaxis(bled_codes_initial, 0, -1)
-        # move channel index to first for plotting
-        bled_codes = np.moveaxis(bled_codes, 0, 1)
-        bled_codes_initial = np.moveaxis(bled_codes_initial, 0, 1)
-        subplot_adjust = [0.07, 0.775, 0.095, 0.9]  # larger top adjust for super title
-        super().__init__([bled_codes_initial, bled_codes], np.ones_like(bled_codes), subplot_adjust=subplot_adjust)
-        n_channels = bled_codes.shape[1]
-        for j in range(self.n_images):
-            # plot a black horizontal line above every third channel
-            for c in range(n_channels):
-                if c % 3 == 0:
-                    self.ax[j].axhline(c - 0.5, color="black", lw=2)
-        self.gene_no = 0
-        self.ax[0].set_title("Initial Bled Code", size=10)
-        self.ax[1].set_title("Bayes Parallel Biased Bled Code", size=10)
-        self.ax[0].set_yticks(ticks=np.arange(self.im_data[0].shape[0]), labels=nb.basic_info.use_channels)
-        self.ax[1].set_xticks(ticks=np.arange(self.im_data[0].shape[1]))
-        self.ax[1].set_xlabel("Round")
-        self.fig.supylabel("Colour Channel")
-        self.main_title = plt.suptitle("", x=(subplot_adjust[0] + subplot_adjust[1]) / 2)
-        self.update_title()
-        self.fig.canvas.mpl_connect("scroll_event", self.change_gene)
-        self.change_norm()
-        self.change_gene()  # plot rectangles
-        plt.show()
+        # create figure
+        self.fig, self.ax = plt.subplots(1, 3, figsize=(15, 5))
+        self.ax[0].imshow(bleed_matrix_raw.T, cmap="viridis")
+        self.ax[0].set_title("Raw Bleed Matrix")
+        self.ax[1].imshow(bleed_matrix_initial.T, cmap="viridis")
+        self.ax[1].set_title("Initial Bleed Matrix")
+        self.ax[2].imshow(bleed_matrix.T, cmap="viridis")
+        self.ax[2].set_title("Final Bleed Matrix")
 
-    def change_gene(self, event=None):
-        if event is not None:
-            if event.button == "up":
-                self.gene_no = (self.gene_no + 1) % self.n_genes
+        # add x and y labels and ticks
+        dye_names = nbp_basic_info.dye_names
+        use_channels = nbp_basic_info.use_channels
+        for i in range(3):
+            self.ax[i].set_xticks(ticks=np.arange(len(dye_names)), labels=dye_names, rotation=45)
+            self.ax[i].set_yticks(ticks=np.arange(len(use_channels)), labels=use_channels)
+            self.ax[i].set_xlabel("Dye")
+            self.ax[i].set_ylabel("Channel")
+
+        # Add super title.
+        self.fig.suptitle("Bleed Matrix")
+
+        if show:
+            self.fig.show()
+
+
+class ViewBledCodes(Subplot):
+    def __init__(self, nbp_basic_info: NotebookPage, nbp_call_spots: NotebookPage, show: bool = True):
+        """
+        Diagnostic pyplot to display gene bled codes.
+
+        Args:
+            nbp_basic_info (NotebookPage): `basic_info` notebook page.
+            nbp_call_spots (NotebookPage): `call_spots` notebook page.
+            show (bool, optional): show the figure after creating. Set false for unit testing. Default: true.
+        """
+        assert type(nbp_basic_info) is NotebookPage
+        assert type(nbp_call_spots) is NotebookPage
+
+        self.gene_names: np.ndarray[str] = nbp_call_spots.gene_names
+        self.gene_names_lower: np.ndarray[str] = np.char.lower(nbp_call_spots.gene_names)
+        self.bled_codes: np.ndarray[float] = nbp_call_spots.bled_codes
+
+        self.fig, self.ax = plt.subplots(1, 1)
+        self.fig.subplots_adjust(bottom=0.2)
+        cmap = mpl.cm.seismic
+        norm = mpl.colors.Normalize(vmin=-np.abs(self.bled_codes).max(), vmax=np.abs(self.bled_codes).max())
+        self.im = self.ax.imshow(np.zeros_like(self.bled_codes[0].T), cmap=cmap, norm=norm)
+        self.fig.colorbar(self.im, ax=self.ax, orientation="vertical", fraction=0.03, pad=0.04)
+        self.ax.set_xticks(list(range(self.bled_codes.shape[1])), nbp_basic_info.use_rounds)
+        self.ax.set_xticks(list(range(self.bled_codes.shape[2])), nbp_basic_info.use_channels)
+
+        # Text box for changing the gene to look at.
+        axbox = self.fig.add_axes([0.2, 0.05, 0.6, 0.075])
+        self.text_box = TextBox(
+            axbox, label="Gene index\nor name", color="darkgray", hovercolor="gray", textalignment="center"
+        )
+        self.text_box.on_submit(self.text_box_changed_to)
+        self.text_box.set_val(self.gene_names[0])
+
+        if show:
+            self.fig.show()
+
+    def text_box_changed_to(self, expression: str) -> None:
+        try:
+            gene_no = int(eval(expression))
+        except NameError or ValueError:
+            gene_name = str(expression)
+            gene_no = (self.gene_names == gene_name).nonzero()[0]
+            gene_no_2 = (self.gene_names == gene_name.lower()).nonzero()[0]
+            if gene_no.size == 0 and gene_no_2.size == 0:
+                return
+            if gene_no.size == 1:
+                gene_no = int(gene_no.item())
+            elif gene_no_2.size == 1:
+                gene_no = int(gene_no_2.item())
             else:
-                self.gene_no = (self.gene_no - 1) % self.n_genes
-        self.im_data = [val[:, :, self.gene_no] for val in self.im_data_3d]
-        for i in range(self.n_images):
-            # change image to different normalisation and change clim
-            self.im[i].set_data(self.im_data[i] * self.colour_norm[i] if self.method == "raw" else self.im_data[i])
-        self.update_title()
-        self.im[-1].axes.figure.canvas.draw()
-
-    def update_title(self):
-        self.main_title.set_text(f"Gene {self.gene_no}, {self.gene_names[self.gene_no]} Bled Code")
-        self.ax[1].set_xticklabels(self.use_rounds)
+                return
+        if gene_no < 0 or gene_no >= self.bled_codes.shape[0]:
+            return
+        self.im.set_data(self.bled_codes[gene_no].T)
+        self.fig.suptitle(f"Gene {gene_no}: {self.gene_names[gene_no]} bled code")
+        self.fig.canvas.draw_idle()

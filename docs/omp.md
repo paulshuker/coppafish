@@ -102,17 +102,11 @@ isolated spots found), many are removed if they are too close to another isolate
 different gene. This leaves highly quality spots that are well isolated from all genes.
 
 With the remaining isolated spots, a 3D local coefficient region centred around each of them of shape `spot_shape` 
-(typically `9x9x5`) is gathered. `spot_shape` must have odd numbers of pixels so that a single pixel can be centred. 
-Each coefficient value is separately converted to its sign, i.e.
+(typically `9x9x5`) is gathered. `spot_shape` must have an odd numbers of pixels so that a single pixel is centred. 
 
-$$
-\text{sign}(c) = \begin{cases} + 1 & \text{if } c \geq 0 \\ - 1 & \text{if } c \lt 0 \end{cases}
-$$
-
-Then the final mean spot is the mean over all isolated spots for each local region position to get a mean spot of shape 
-`spot_shape`. By construction, the central pixel position will be $+1$ and all other positions will be $\geq -1$ and 
-$\leq +1$. The mean spot can be seen in the `_omp.pdf` file produced at the end of the coppafish pipeline in the output 
-directory.
+The mean spot is the mean over all isolated spots for each local region position to get a mean spot of shape 
+`spot_shape`. The mean spot can be seen in the `_omp.pdf` file produced at the end of the coppafish pipeline in the 
+output directory.
 
 <figure markdown="span">
   ![Image title](images/algorithm/omp/omp_mean_spot_example.png){ width="700" }
@@ -146,7 +140,7 @@ a score threshold set by `score_threshold` (typically `0.1`). These are the fina
     Coefficients can be inflated by single overly-bright round/channel anomalies since they are computed using a 
     non-robust least squares calculation. This could be from real autofluorescence or from mistakes in registration. 
     For this reason, a spot's score is better represented by using coefficient data from its neighbourhood. The mean 
-    spot is an estimation of how much to care about the local neighbourhood.
+    spot is an estimation of how much care to put in the local, spatial neighbourhood.
 
 ## Diagnostics
 

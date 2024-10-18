@@ -5,7 +5,7 @@ pipeline, you can delete the notebook and all output directory files and re-run 
 re-run starting from an intermediate stage, you can delete all subsequent stages and output files. To see what valid 
 stages of coppafish you can re-run starting from, in chronological order, in the python terminal
 
-```python
+```py
 from coppafish.utils import CompatibilityTracker
 
 tracker = CompatibilityTracker()
@@ -14,7 +14,7 @@ tracker.print_stage_names()
 
 As an example, if you wished to know how to start from the stage "find_spots" again
 
-```python
+```py
 from coppafish.utils import CompatibilityTracker
 
 tracker = CompatibilityTracker()
@@ -42,7 +42,7 @@ results to be salvaged from an incomplete tile.
 For probabilistic cell typing with [pciSeq](https://github.com/acycliq/pciSeq), you can export gene reads into a 
 compatible csv file by 
 
-```python
+```py
 from coppafish import Notebook
 from coppafish.utils import export_to_pciseq
 
@@ -53,7 +53,7 @@ export_to_pciseq(nb, method)
 where method can be "omp", "prob", or "anchor" for each gene calling method. To set a score and/or intensity minimum 
 threshold, 
 
-```python
+```py
 export_to_pciseq(nb, method, score_thresh, intensity_thresh)
 ```
 
@@ -85,9 +85,9 @@ highlighting it, press F9, then Enter to kill it. Press q to exit the `htop` vie
 
 ### Windows
 
-Open a command prompt, run the command
+Open command prompt or powershell, run the command
 
-```terminal
+```powershell
 start /b python -m C:\path\to\config.ini
 ```
 
@@ -98,7 +98,7 @@ running.
 
 To remove a notebook page, in the python terminal
 
-```python
+```py
 from coppafish import Notebook
 
 nb = Notebook("/path/to/notebook")
@@ -107,7 +107,7 @@ nb.delete_page("page_name")
 
 For example, to remove the stitch page
 
-```python
+```py
 from coppafish import Notebook
 
 nb = Notebook("/path/to/notebook")
@@ -128,7 +128,7 @@ junk or not be sent altogether, depending on the email address to be sent to. Th
 
 Generate gene codes automatically in the python terminal by
 
-```python
+```py
 from coppafish.utils import reed_solomon_codes
 
 codes = reed_solomon_codes(n_gene_codes, n_rounds, n_channels)
@@ -144,7 +144,7 @@ For example, to access the first gene code: `codes["gene_0"]`.
 Every notebook page has associated config section(s) saved to disk. You can look at each notebook page's associated 
 config section(s). For example, to see the associated config section(s) for the filter page, in the python terminal
 
-```python
+```py
 from coppafish import Notebook
 
 nb = Notebook("path/to/notebook")

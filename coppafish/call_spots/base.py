@@ -36,6 +36,7 @@ def get_non_duplicate(
         ```bool [n_spots]```.
             Whether spot_tile[s] is the tile that spot_global_yxz[s] is closest to.
     """
+    # TODO: Combine non-duplicate detection functions for call spots and OMP.
     assert spot_local_yxz.shape[0] == spot_tile.shape[0]
     tile_centres = tile_origin[use_tiles] + tile_centre
     # Do not_duplicate search in 2D as overlap is only 2D

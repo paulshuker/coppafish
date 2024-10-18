@@ -1,5 +1,9 @@
+# Documentation
+mkdocs-material
 # Continuous integration testing
 pytest
+# Napari Qt tests
+pytest-qt
 # Code coverage
 pytest-cov
 # Static type checker

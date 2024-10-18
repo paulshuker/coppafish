@@ -4,7 +4,34 @@ Coppafish is built on the basis that an algorithm that performs well does not ne
 updated when there is evidence that it can perform better and that the current algorithm is performing worse.
 
 Typically there is a protected staging branch, like `v1.0.0`, for a future release. This must be pull requested into 
-and must pass integration tests. The `main` branch is kept at the latest version release.
+and must pass continuous integration tests. The `main` branch is kept as the latest version release and remains the 
+default branch when git cloning.
+
+## Run Tests
+
+In your coppafish environment, install dev packages 
+
+```terminal
+pip install -r requirements-dev.txt
+```
+
+Run unit tests (~35s) 
+
+```terminal
+pytest -m "not integration and not manual and not notebook"
+```
+
+Run integration tests (~50s) 
+
+```terminal
+pytest -m "integration and not manual"
+```
+
+Run unit tests requiring a notebook (~3s) 
+
+```terminal
+pytest -m "notebook and not integration and not manual"
+```
 
 ## Code Philosophy
 
@@ -33,42 +60,35 @@ reasonable.
 * The documentation should update in parallel with the code. Having the documentation as part of the github repository 
 makes this easier.
 
-## Run Tests
-
-In your coppafish environment, install dev packages 
-
-```terminal
-pip install -r requirements-dev.txt
-```
-
-Run unit tests (~10s) 
-
-```terminal
-pytest -m "not integration and not manual and not notebook"
-```
-
-Run integration tests (~50s) 
-
-```terminal
-pytest -m "integration and not manual"
-```
-
-Run unit tests requiring a notebook (~3s) 
-
-```terminal
-pytest -m "notebook and not integration and not manual"
-```
-
 ## Run Documentation Locally
-
-Install [mkdocs-material](https://squidfunk.github.io/mkdocs-material/) 
-
-```terminal
-python -m pip install mkdocs-material
-```
 
 Start the documentation locally 
 
 ```terminal
 mkdocs serve
 ```
+
+## Docstrings
+
+While not all docstrings are consistent yet, future docstrings follow the rules below:
+
+* The code's functionality must be reproducible from the docstring alone.
+* Use [Google's style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html).
+* `` `ndarray` `` represents a numpy ndarray and `` `zarray` `` represents a zarr Array.
+* `` `zgroup` `` represents a zarr Group.
+* Specify datatype of a `ndarray`/`zarray` when applicable. For example, to represent any floating point datatype, 
+`` `ndarray[float]` `` or a uint16 by `` `ndarray[uint16]` ``
+* Specify the shape of a `ndarray`/`zarray` in brackets when applicable. For example, 
+`` `(n_tiles x n_rounds x n_channels_use x 3) ndarray[int32]` ``
+* The use of `n_rounds` refers to the number of rounds, including the sequencing and anchor round. So, this is equal to 
+`n_seq_rounds + 1`. We label all sequencing rounds `0, 1, 2, 3, ...` and then the anchor round is given the next unused 
+integer. Whereas, `n_rounds_use` refers to `#!py len(use_rounds)` which is the total number of sequencing rounds. 
+* Channels are slightly different because `use_channels` in the notebook can have channel indices of any positive 
+integer value. These represent the sequencing channels. For example, `use_channels = 0, 5, ..., 27`. So, `n_channels` 
+refers to size `#!py max(use_channels) + 1`, i.e. the smallest shape that can be indexed by `use_channels`. Whereas, 
+`n_channels_use` means `#!py len(use_channels)` such that `0` represents `#!py use_channels[0]` etc. Note that neither 
+of these definitions includes the dapi channel/anchor channel[^1], which can be found at `#!py nb.basic_info.dapi_channel` 
+and `#!py nb.basic_info.anchor_channel` respectively.
+
+[^1]:
+    The anchor channel can also be a sequencing channel.

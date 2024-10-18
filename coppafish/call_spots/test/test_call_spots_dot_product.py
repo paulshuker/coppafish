@@ -14,8 +14,14 @@ def test_gene_prob_score():
     spot_colours = (rng.rand(n_spots, n_rounds, n_channels_use) - 0.5) * 2
     bled_codes = rng.rand(n_genes, n_rounds, n_channels_use)
     kappa_option = 1
+    spot_colours_clone = spot_colours.copy()
+    bled_codes_clone = bled_codes.copy()
     probabilities_1 = dot_product.gene_prob_score(spot_colours, bled_codes)
+    assert np.allclose(spot_colours, spot_colours_clone), "Function changed spot_colours input"
+    assert np.allclose(bled_codes, bled_codes_clone), "Function changed bled_codes input"
     probabilities_2 = dot_product.gene_prob_score(spot_colours, bled_codes, kappa_option)
+    assert np.allclose(spot_colours, spot_colours_clone), "Function changed spot_colours input"
+    assert np.allclose(bled_codes, bled_codes_clone), "Function changed bled_codes input"
     assert isinstance(probabilities_1, np.ndarray), "Expected ndarray as output"
     assert isinstance(probabilities_2, np.ndarray), "Expected ndarray as output"
     assert probabilities_1.shape == probabilities_2.shape == (n_spots, n_genes), "Expected shape (n_spots, n_genes)"
