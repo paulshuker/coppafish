@@ -16,7 +16,7 @@ code. For example, if the dyes are labelled `0, 1, 2` and there are 2 sequencing
 * Notebook - A write-once[^1] compressed file that stores all important outputs from coppafish. The notebook is used 
 to plot many [diagnostics](diagnostics.md). The notebook contains notebook pages. There is a notebook page for each 
 [method](overview.md) section. A notebook can be loaded by 
-`#!python from coppafish import Notebook; nb = Notebook("path/to/notebook.npz")`. Variables from the notebook can be 
+`#!python from coppafish import Notebook; nb = Notebook("path/to/notebook")`. Variables from the notebook can be 
 directly read. For example, you can read the `use_tiles` variable from the `basic_info` page by 
 `#!python print(nb.basic_info.use_tiles)`. Each variable has a description, which can be printed. For example, 
 `#!python nb.basic_info > "use_tiles"`.

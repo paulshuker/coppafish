@@ -45,8 +45,8 @@ def test_compute_spots_from() -> None:
     rng = np.random.RandomState(0)
     im_y, im_x, im_z = 10, 11, 12
     tile_shape = (im_y, im_x, im_z)
-    image = scipy.sparse.csr_matrix(rng.rand(im_y, im_x, im_z).astype(np.float32).reshape((-1, 1)))
-    image_numpy = image[:, [0]].toarray().reshape(tile_shape)
+    image = [scipy.sparse.csr_matrix(rng.rand(im_y, im_x, im_z).astype(np.float32).reshape((-1, 1), order="F"))]
+    image_numpy = image[0][:, [0]].toarray().reshape(tile_shape, order="F")
     # The most simple case possible.
     spot_positions_yxz = torch.zeros((1, 3)).int()
     spot_positions_yxz[0, 0] = 5
@@ -55,7 +55,7 @@ def test_compute_spots_from() -> None:
     spot_positions_gene_no = torch.zeros(1).int()
     spot_shape = (1, 1, 1)
     mean_spot = compute_mean_spot(image, spot_positions_yxz, spot_positions_gene_no, tile_shape, spot_shape)
-    assert np.allclose(mean_spot, np.sign(image_numpy[5, 5, 6]))
+    assert np.allclose(mean_spot.numpy(), image_numpy[5, 5, 6])
 
     # Two spot positions
     spot_positions_yxz = torch.zeros((2, 3)).int()
@@ -67,8 +67,8 @@ def test_compute_spots_from() -> None:
     spot_positions_yxz[1, 2] = 7
     spot_positions_gene_no = torch.zeros(2).int()
     mean_spot = compute_mean_spot(image, spot_positions_yxz, spot_positions_gene_no, tile_shape, spot_shape)
-    signs = torch.sign(torch.asarray([image_numpy[5, 5, 6], image_numpy[4, 5, 7]]))
-    assert torch.allclose(mean_spot, torch.mean(signs))
+    values = torch.asarray([image_numpy[5, 5, 6], image_numpy[4, 5, 7]])
+    assert torch.allclose(mean_spot, torch.mean(values))
 
     # Two large spot shapes with out of bounds cases.
     spot_shape = (15, 11, 3)
@@ -93,8 +93,8 @@ def test_compute_spots_from() -> None:
         [spot_positions_yxz[1, 1]],
         [spot_positions_yxz[1, 2]],
     ]
-    image_subset = torch.sign(torch.asarray(image_subset[np.newaxis]))
-    image_subset_2 = torch.sign(torch.asarray(image_subset_2[np.newaxis]))
-    expected_mean_spot = torch.concat((image_subset, image_subset_2), dim=0).mean(0)
+    image_subset = torch.asarray(image_subset[np.newaxis])
+    image_subset_2 = torch.asarray(image_subset_2[np.newaxis])
+    expected_mean_spot = torch.concat((image_subset, image_subset_2), dim=0).mean(0)[:, np.newaxis]
     mean_spot = compute_mean_spot(image, spot_positions_yxz, spot_positions_gene_no, tile_shape, spot_shape)
     assert torch.allclose(mean_spot, expected_mean_spot)

@@ -2,7 +2,6 @@ from typing import Tuple
 
 import numpy as np
 import torch
-from typing_extensions import Self
 
 from .. import log
 
@@ -10,14 +9,14 @@ from .. import log
 class CoefficientSolverOMP:
     NO_GENE_ASSIGNMENT: int = -32_768
 
-    def __init__(self: Self) -> None:
+    def __init__(self) -> None:
         """
-        Initalise the SolveOMP object. Used to compute OMP coefficients.
+        Initialise the CoefficientSolverOMP object. Used to compute OMP coefficients.
         """
         pass
 
     def compute_omp_coefficients(
-        self: Self,
+        self,
         pixel_colours: np.ndarray[np.float16],
         bled_codes: np.ndarray[np.float32],
         background_codes: np.ndarray[np.float32],
@@ -25,14 +24,15 @@ class CoefficientSolverOMP:
         maximum_iterations: int,
         dot_product_threshold: float,
         normalisation_shift: float,
-    ) -> np.ndarray:
+        return_dp_scores: bool = False,
+    ) -> np.ndarray | Tuple[np.ndarray, Tuple[np.ndarray]]:
         """
         Compute OMP coefficients for all pixel colours. At each iteration of OMP, the next best gene assignment is found
-        from the residual spot colours divided by their L2 norm + normalisation_shift. A pixel is stopped iterating on if
-        gene assignment fails. See function `get_next_gene_assignments` below for details on the stopping criteria and gene
-        scoring. Pixels that are gene assigned are then fitted with the additional gene to find updated coefficients. See
-        function `get_next_gene_coefficients` for details on the coefficient computation. All computations are run with
-        32-bit float precision.
+        from the residual spot colours divided by their L2 norm + normalisation_shift. A pixel is stopped iterating on
+        if gene assignment fails. See function `get_next_gene_assignments` below for details on the stopping criteria
+        and gene scoring. Pixels that are gene assigned are then fitted with the additional gene to find updated
+        coefficients. See function `get_next_gene_coefficients` for details on the coefficient computation. All
+        computations are run with 32-bit float precision.
 
         Args:
             - pixel_colours (`(n_pixels x n_rounds_use x n_channels_use) ndarray[float]`): pixel intensity in each
@@ -49,9 +49,13 @@ class CoefficientSolverOMP:
             - normalisation_shift (float): during OMP each gene assignment iteration, the residual spot colour is
                 normalised by dividing by its L2 norm + normalisation_shift. At the end of the computation, the final
                 coefficients are divided by the L2 norm of the pixel colour + normalisation_shift.
+            - return_dp_scores (bool, optional): return gene dot product scores for each iteration. Default: false.
 
         Returns:
-            (`(n_pixels x n_genes) ndarray[float32]`) coefficients: each gene coefficient for every pixel.
+            - (`(n_pixels x n_genes) ndarray[float32]`) coefficients: each gene's final coefficient on every pixel.
+            - (tuple of `(n_pixels x n_genes_all) ndarray[float32]`) dp_scores: the dot product score is every gene on
+                each iteration. The length of dp_scores is the number of iterations that passed. Only returned if
+                return_dp_scores is true.
         """
         n_pixels, n_rounds_use, n_channels_use = pixel_colours.shape
         n_rounds_channels_use = n_rounds_use * n_channels_use
@@ -63,6 +67,7 @@ class CoefficientSolverOMP:
         assert type(maximum_iterations) is int
         assert type(dot_product_threshold) is float
         assert type(normalisation_shift) is float
+        assert type(return_dp_scores) is bool
         assert maximum_iterations > 0
         assert dot_product_threshold >= 0
         assert normalisation_shift >= 0
@@ -79,6 +84,7 @@ class CoefficientSolverOMP:
         assert background_codes.shape == (n_channels_use, n_rounds_use, n_channels_use)
         assert colour_norm_factor.shape == (1, n_rounds_use, n_channels_use)
 
+        dp_scores = []
         bled_codes_torch = torch.tensor(bled_codes, dtype=torch.float32)
         background_codes_torch = torch.tensor(background_codes, dtype=torch.float32)
         all_bled_codes = torch.concat((bled_codes_torch, background_codes_torch), dim=0)
@@ -106,15 +112,20 @@ class CoefficientSolverOMP:
             # Find the next best gene for pixels that have not reached a stopping criteria yet.
             fail_gene_indices = torch.cat((genes_selected[:, :iteration], bg_gene_indices), 1)
             fail_gene_indices = fail_gene_indices[pixels_to_continue]
-            next_best_genes = self.get_next_gene_assignments(
+            gene_assigment_results = self.get_next_gene_assignments(
                 residual_colours,
                 all_bled_codes,
                 fail_gene_indices,
                 dot_product_threshold,
                 maximum_pass_count=maximum_iterations - iteration,
+                return_scores=return_dp_scores,
             )
-            genes_selected[pixels_to_continue, iteration] = next_best_genes
-            del next_best_genes, fail_gene_indices
+            if return_dp_scores:
+                genes_selected[pixels_to_continue, iteration] = gene_assigment_results[0]
+                dp_scores.append(gene_assigment_results[1].numpy())
+            else:
+                genes_selected[pixels_to_continue, iteration] = gene_assigment_results
+            del gene_assigment_results, fail_gene_indices
 
             # Update what pixels to continue iterating on.
             pixels_to_continue = genes_selected[:, iteration] != self.NO_GENE_ASSIGNMENT
@@ -141,19 +152,35 @@ class CoefficientSolverOMP:
 
         coefficients /= torch.linalg.vector_norm(colours, dim=1, keepdim=True) + normalisation_shift
         coefficients = coefficients.cpu().numpy()
+        if return_dp_scores:
+            return coefficients, tuple(dp_scores)
         return coefficients
 
+    def create_background_bled_codes(self, n_rounds_use: int, n_channels_use: int) -> np.ndarray:
+        """
+        Create the background bled codes that are used during OMP coefficient computing.
+
+        Args:
+            n_rounds_use (int): the number of sequencing rounds.
+            n_channels_use (int): the number of sequencing channels.
+        """
+        bg_bled_codes = np.eye(n_channels_use)[:, None, :].repeat(n_rounds_use, axis=1)
+        # Normalise the codes the same way as gene bled codes.
+        bg_bled_codes /= np.linalg.norm(bg_bled_codes, axis=(1, 2))
+        return bg_bled_codes
+
     def get_next_gene_assignments(
-        self: Self,
+        self,
         residual_colours: torch.Tensor,
         all_bled_codes: torch.Tensor,
         fail_gene_indices: torch.Tensor,
         dot_product_threshold: float,
         maximum_pass_count: int,
-    ) -> torch.Tensor:
+        return_scores: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
-        Get the next best gene assignment for each residual colour. Each gene is scored to each pixel using a dot product
-        scoring. A pixel fails gene assignment if one or more of the conditions is met:
+        Get the next best gene assignment for each residual colour. Each gene is scored to each pixel using a dot
+        product scoring. A pixel fails gene assignment if one or more of the conditions is met:
 
         - The top gene dot product score is below the dot_product_threshold.
         - The next best gene is in the fail_gene_indices list.
@@ -171,13 +198,17 @@ class CoefficientSolverOMP:
                 background genes appended.
             - fail_gene_indices (`(n_pixels x n_genes_fail) tensor[int32]`): if the next gene assignment for a pixel is
                 included on the list of fail gene indices, consider gene assignment a fail.
-            - dot_product_threshold (float): a gene can only be assigned if the dot product score is above this threshold.
+            - dot_product_threshold (float): a gene can only be assigned if the dot product score is above this
+                threshold.
             - maximum_pass_count (int): if a pixel has more than maximum_pass_count dot product scores above the
                 dot_product_threshold, then gene assignment has failed.
+            - return_scores (bool, optional): return the dot product scores for every gene. Default: false.
 
         Returns:
-            (`(n_pixels) tensor[int32]`) next_best_genes: the next best gene assignment for each pixel. A value of -32_768
-                is placed for pixels that failed to find a next best gene.
+            - (`(n_pixels) tensor[int32]`) next_best_genes: the next best gene assignment for each pixel. A value of
+                -32_768 is placed for pixels that failed to find a next best gene.
+            - (`(n_pixels x n_genes_all) tensor[float32]`) all_scores: every gene dot product score. This includes
+                genes that are in fail_gene_indices. Only returned if return_scores is set to true.
         """
         assert type(residual_colours) is torch.Tensor
         assert type(all_bled_codes) is torch.Tensor
@@ -225,10 +256,13 @@ class CoefficientSolverOMP:
         log.debug(f"So total pixels passed: {pixels_passed.sum()} out of {pixels_passed.shape}")
         next_best_genes[~pixels_passed] = self.NO_GENE_ASSIGNMENT
 
+        if return_scores:
+            return next_best_genes, all_gene_scores
+
         return next_best_genes
 
     def get_next_gene_coefficients(
-        self: Self,
+        self,
         pixel_colours: torch.Tensor,
         bled_codes: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:

@@ -86,7 +86,7 @@ class Viewer2D:
             auto_view (str, optional): whether to immediately open the Viewer2D once drawn. Default: true.
         """
         if isinstance(nb, str):
-            nb = Notebook(nb)
+            nb = Notebook(nb, must_exist=True)
         if not nb.has_page("call_spots"):
             raise ValueError(
                 f"Given notebook does not have call spots. Complete up to call spots before opening the Viewer2D"

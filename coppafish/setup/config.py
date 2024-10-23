@@ -123,6 +123,7 @@ _options = {
         "kappa": "maybe_number",
         "concentration_parameter_parallel": "number",
         "concentration_parameter_perpendicular": "number",
+        "dot_product_weight": "number",
     },
     "omp": {
         "colour_normalise": "bool",
@@ -137,12 +138,7 @@ _options = {
         "force_cpu": "bool",
         "radius_xy": "int",
         "radius_z": "int",
-        "spot_shape": "tuple_int",
-        "spot_shape_max_spots_considered": "int",
-        "shape_isolation_distance_yx": "int",
-        "shape_isolation_distance_z": "maybe_int",
-        "shape_coefficient_threshold": "number",
-        "shape_sign_thresh": "number",
+        "mean_spot_filepath": "maybe_str",
         "score_threshold": "number",
     },
     "thresholds": {

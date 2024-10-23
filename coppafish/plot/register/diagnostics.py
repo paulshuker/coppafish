@@ -1,4 +1,5 @@
 from typing import Optional
+import warnings
 
 from PyQt5.QtWidgets import QLabel, QLineEdit, QMainWindow, QPushButton, QSlider
 import matplotlib.pyplot as plt
@@ -14,8 +15,8 @@ from superqt import QRangeSlider
 import torch
 from tqdm import tqdm
 
-from coppafish.setup.notebook import Notebook
 from coppafish.setup import file_names
+from coppafish.setup.notebook import Notebook
 from coppafish.spot_colours.base import apply_affine, apply_flow_new
 
 
@@ -146,8 +147,11 @@ class RegistrationViewer:
         Format the viewer.
         """
         # Make layer list invisible to remove clutter
-        self.viewer.window.qt_viewer.dockLayerList.setVisible(False)
-        self.viewer.window.qt_viewer.dockLayerControls.setVisible(False)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            # Turn off layer list and layer controls.
+            self.viewer.window.qt_viewer.dockLayerList.hide()
+            self.viewer.window.qt_viewer.dockLayerControls.hide()
         # add sliders to adjust contrast limits
         self.add_contrast_lim_sliders()
         # add buttons to switch on/off the layers

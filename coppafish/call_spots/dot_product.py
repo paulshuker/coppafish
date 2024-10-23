@@ -1,48 +1,53 @@
-from typing import Tuple
 import numpy as np
 
 
-def dot_product_score(
-    spot_colours: np.ndarray, bled_codes: np.ndarray, variance: np.ndarray = None, norm_shift: float = 0
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def dot_product_score(spot_colours: np.ndarray, bled_codes: np.ndarray, dot_product_weight: float) -> np.ndarray:
     """
-    Simple dot product score assigning each spot to the gene with the highest score.
+    Score each spot to each gene. The maximum score is the assigned gene for said spot. The scores range from 0 to 1.
 
     Args:
-        spot_colours (`[n_spots x (n_rounds * n_channels_use)] ndarray[float]`): spot colours.
-        bled_codes (`[n_genes x (n_rounds * n_channels_use)] ndarray[float]`): normalised bled codes.
-        variance (`[n_spots x (n_rounds * n_channels_use)] ndarray[float]`, optional): array of variances. Default:
-            all ones.
-        norm_shift (float, optional): added to the norm of each spot colour to avoid boosting weak spots too much.
-            Default: 0.
+        spot_colours (`(n_spots x n_rounds x n_channels_use) ndarray[float]`): spot colours.
+        bled_codes (`(n_genes x n_rounds x n_channels_use) ndarray[float]`): normalised bled codes.
+        dot_product_weight (float): how much the dot product score is a pure dot product score. 1 is a simple dot
+            product score, 0 gives each round an equal weighting on the score. A value between 0 and 1 is somewhere in
+            between the two.
 
     Returns:
-        - gene_no: np.ndarray of gene numbers [n_spots]
-        - gene_score: np.ndarray of gene scores [n_spots]
-        - gene_score_second: np.ndarray of second-best gene scores [n_spots]
-        - `[n_spots x n_genes] ndarray[float]`: `score` such that `score[d, c]` gives dot product between
+        (`(n_spots x n_genes) ndarray[float]`): score. score such that `score[d, c]` gives a "semi-dot product" between
             `spot_colours` vector `d` with `bled_codes` vector `c`.
     """
-    variance = np.ones_like(spot_colours, spot_colours.dtype) if variance is None else variance
-    assert spot_colours.shape == variance.shape, f"{spot_colours.shape=}, {variance.shape=}"
-    n_genes = bled_codes.shape[0]
-    # If no variance is provided, we assume all spots are equally reliable
-    # Normalise spot colours
-    spot_colours = spot_colours / (np.linalg.norm(spot_colours, axis=1)[:, None] + norm_shift)
+    assert spot_colours.ndim == 3
+    assert bled_codes.ndim == 3
+    if dot_product_weight < 0 or dot_product_weight > 1:
+        raise ValueError(f"dot_product_weight must be between 0 and 1, got {dot_product_weight}")
 
-    # z-score spot colours and bled codes by dividing by the standard deviation
-    # we want these to both have shape [n_spots, n_genes, n_rounds * n_channels_use]
-    spot_colours_z_scored = np.repeat((spot_colours / np.sqrt(variance))[:, None, :], n_genes, axis=1)
-    bled_codes_z_scored = bled_codes[None, :, :] / np.sqrt(variance)[:, None, :]
+    # L2 normalise the entire spot colour for each spot.
+    spot_colours /= np.linalg.norm(spot_colours, axis=(1, 2), keepdims=True)
+    bled_codes /= np.linalg.norm(bled_codes, axis=(1, 2), keepdims=True)
+    # The spot colour and bled code L2 norms for each round separately.
+    spot_colours_norms = np.linalg.norm(spot_colours.copy(), axis=2)
+    bled_code_norms = np.linalg.norm(bled_codes.copy(), axis=2)
+    # F hat as defined in the docs, has shape (n_spots x n_rounds x n_channels).
+    f_hat = spot_colours.copy()
+    f_hat /= spot_colours_norms[:, :, np.newaxis]
+    # K hat as defined in the docs, has shape (n_genes x n_rounds x n_channels).
+    k_hat = bled_codes.copy()
+    k_hat /= bled_code_norms[:, :, np.newaxis]
 
-    # Now we can obtain the dot product score for each spot and each gene
-    all_score = np.sum(spot_colours_z_scored * bled_codes_z_scored, axis=2) / np.sum(bled_codes_z_scored**2, axis=2)
-    gene_no = np.argmax(all_score, axis=1)
-    all_score_sorted = np.sort(all_score, axis=1)
-    gene_score = all_score_sorted[:, -1]
-    gene_score_second = all_score_sorted[:, -2]
+    # FIXME: A potential mistake in the scores computation here as scores are way above 1 for robominnie.
+    # Has shape (n_spots x n_genes x n_rounds).
+    scores = (spot_colours_norms[:, np.newaxis] * bled_code_norms[np.newaxis]) ** dot_product_weight
+    scores *= (f_hat[:, np.newaxis] * k_hat[np.newaxis]).sum(3)
+    # Has shape (n_spots x n_genes).
+    scores = scores.sum(2)
+    del f_hat, k_hat
+    scores /= np.sqrt((spot_colours_norms ** (2 * dot_product_weight)).sum(1))[:, np.newaxis]
+    del spot_colours_norms
+    scores /= np.sqrt((bled_code_norms ** (2 * dot_product_weight)).sum(1))[np.newaxis]
+    del bled_code_norms
+    scores = scores.clip(0, 1)
 
-    return gene_no, gene_score, gene_score_second, all_score
+    return scores
 
 
 def gene_prob_score(spot_colours: np.ndarray, bled_codes: np.ndarray, kappa: float = 2) -> np.ndarray:

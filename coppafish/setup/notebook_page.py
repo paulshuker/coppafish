@@ -440,8 +440,7 @@ class NotebookPage:
             "colours": [
                 "zarray[float32]",
                 "Numpy array [n_spots x n_rounds x n_channels]. "
-                + "`[s, r, c]` is the intensity of spot $s$ on round $r$, channel $c$."
-                + "`-tile_pixel_value_shift` if that round/channel not used otherwise integer.",
+                + "`[s, r, c]` is the intensity of spot $s$ in round $r$, channel $c$.",
             ],
         },
         "call_spots": {
@@ -550,23 +549,10 @@ class NotebookPage:
             ],
         },
         "omp": {
-            "spot_tile": [
-                "int",
-                "`spot` was found from isolated spots detected on this tile.",
-            ],
             "mean_spot": [
-                "ndarray[float]",
-                "Numpy float16 array [shape_max_size[0] x shape_max_size[1] x shape_max_size[2]] or None"
-                + "Mean of *OMP* coefficient sign in neighbourhood centred on detected isolated spot.",
-            ],
-            "spot": [
-                "ndarray[int]",
-                "Numpy integer array [shape_size_y x shape_size_x x shape_size_z]"
-                + "Expected sign of *OMP* coefficient in neighbourhood centered on spot."
-                + ""
-                + "1 means expected positive coefficient."
-                + ""
-                + "0 means unsure of sign.",
+                "ndarray[float32]",
+                "Numpy float16 array [im_y x im_x x im_z]"
+                + "Mean of *OMP* spots in neighbourhood centred on detected isolated spot.",
             ],
             "results": [
                 "zgroup",

@@ -1,4 +1,5 @@
 from typing import Tuple, Union
+import warnings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -6,62 +7,70 @@ from matplotlib.widgets import CheckButtons, Slider
 import numpy as np
 import torch
 
-from ...omp import coefs, scores_torch
-from ...omp import base as omp_base
-from ...setup.notebook import Notebook
-from ...spot_colours import base as spot_colours_base
+from coppafish.omp import coefs, scores_torch
+from coppafish.setup.notebook import NotebookPage
+from coppafish.spot_colours import base as spot_colours_base
+from coppafish.plot.results_viewer.subplot import Subplot
 
 
-def get_spot_position_and_tile(nb: Notebook, spot_no: int, method: str) -> Tuple[np.ndarray, int]:
-    if method in ("anchor", "prob"):
-        local_yxz = nb.ref_spots.local_yxz[spot_no]
-        tile = nb.ref_spots.tile[spot_no]
-    elif method == "omp":
-        all_local_yxz, all_tile = omp_base.get_all_local_yxz(nb.basic_info, nb.omp)
-        local_yxz = all_local_yxz[spot_no]
-        tile = all_tile[spot_no].item()
-    else:
-        raise ValueError(f"Unknown gene calling method: {method}")
-    return local_yxz, int(tile)
-
-
-class ViewOMPImage:
+class ViewOMPImage(Subplot):
     def __init__(
         self,
-        nb: Notebook,
-        spot_no: Union[int, None],
+        nbp_basic: NotebookPage,
+        nbp_filter: NotebookPage,
+        nbp_register: NotebookPage,
+        nbp_call_spots: NotebookPage,
+        nbp_omp: NotebookPage,
+        local_yxz: np.ndarray,
+        tile: int,
+        spot_no: int,
+        spot_gene_no: int,
         method: str,
         im_size: int = 8,
         z_planes: Tuple[int] = (-2, -1, 0, 1, 2),
         init_select_gene: Union[int, None] = None,
-    ) -> None:
+        show: bool = True,
+    ):
         """
-        Display omp coefficients of all genes around the local neighbourhood of a spot.
+        Display omp coefficients of all genes around the local neighbourhood of a pixel position.
 
         Args:
-            - nb (Notebook): Notebook containing experiment details.
-            - spot_no (int-like or none): Spot index to be plotted.
-            - method (str): gene calling method.
-            - im_size (int): number of pixels out from the central pixel to plot to create the square images.
-            - z_planes (tuple of int): z planes to show. 0 is the central z plane.
-            - init_select_gene (int): gene number to display initially. Default: the highest scoring gene.
+            nbp_basic (NotebookPage): `basic_info` notebook page.
+            nbp_filter (NotebookPage): `filter` notebook page.
+            nbp_register (NotebookPage): `register` notebook page.
+            nbp_call_spots (NotebookPage): `call_spots` notebook page.
+            nbp_omp (NotebookPage): `omp` notebook page.
+            local_yxz (`(3) ndarray[int]`): the pixel position relative to its tile's bottom-left corner.
+            tile (int-like): tile index the pixel is on.
+            spot_no (int-like or none): spot index to be plotted.
+            spot_gene_no (int-like or none): spot's gene index. The index will be a selectable option on the slider if
+                given. None if not given.
+            method (str): gene calling method.
+            im_size (int, optional): number of pixels out from the central pixel to plot to create the square images.
+            z_planes (tuple of int, optional): z planes to show. 0 is the central z plane.
+            init_select_gene (int, optional): gene number to display initially. Default: the highest scoring gene.
+            show (bool, optional): display the plot once built. False is useful when unit testing. Default: true.
         """
-        assert type(nb) is Notebook
-        if spot_no is None:
-            return
+        assert type(nbp_basic) is NotebookPage
+        assert type(nbp_filter) is NotebookPage
+        assert type(nbp_register) is NotebookPage
+        assert type(nbp_call_spots) is NotebookPage
+        assert type(nbp_omp) is NotebookPage
+        assert type(local_yxz) is np.ndarray
+        assert local_yxz.shape == (3,)
+        assert type(int(tile)) is int
         assert type(int(spot_no)) is int
+        assert type(int(spot_gene_no)) is int
         assert type(method) is str
         assert type(im_size) is int
         assert im_size >= 0
         assert type(z_planes) is tuple
         assert init_select_gene is None or type(init_select_gene) is int
+        assert type(show) is bool
 
         plt.style.use("dark_background")
 
-        local_yxz, tile = get_spot_position_and_tile(nb, spot_no, method)
-        assert local_yxz.shape == (3,)
-
-        config = nb.omp.associated_configs["omp"]
+        config = nbp_omp.associated_configs["omp"]
 
         coord_min = (local_yxz - im_size).tolist()
         coord_min[2] = local_yxz[2].item() + min(z_planes)
@@ -72,15 +81,15 @@ class ViewOMPImage:
 
         spot_shape_yxz = tuple([coord_max[i] - coord_min[i] for i in range(3)])
         central_yxz = tuple(torch.asarray(spot_shape_yxz)[np.newaxis].T.int() // 2)
-        n_rounds_use, n_channels_use = len(nb.basic_info.use_rounds), len(nb.basic_info.use_channels)
+        n_rounds_use, n_channels_use = len(nbp_basic.use_rounds), len(nbp_basic.use_channels)
         image_colours = spot_colours_base.get_spot_colours_new(
-            image=nb.filter.images,
-            flow=nb.register.flow,
-            affine=nb.register.icp_correction,
+            image=nbp_filter.images,
+            flow=nbp_register.flow,
+            affine=nbp_register.icp_correction,
             yxz=yxz,
             tile=int(tile),
-            use_rounds=nb.basic_info.use_rounds,
-            use_channels=nb.basic_info.use_channels,
+            use_rounds=nbp_basic.use_rounds,
+            use_channels=nbp_basic.use_channels,
             out_of_bounds_value=0,
         ).reshape(
             (
@@ -93,33 +102,31 @@ class ViewOMPImage:
         )
         assert not np.allclose(image_colours, 0)
         image_colours = image_colours.reshape((-1, n_rounds_use, n_channels_use))
-        bled_codes = nb.call_spots.bled_codes.astype(np.float32)
+        bled_codes = nbp_call_spots.bled_codes.astype(np.float32)
         n_genes = bled_codes.shape[0]
         assert (~np.isnan(bled_codes)).all(), "bled codes cannot contain nan values"
         assert np.allclose(np.linalg.norm(bled_codes, axis=(1, 2)), 1), "bled codes must be L2 normalised"
         omp_solver = coefs.CoefficientSolverOMP()
-        bg_bled_codes = np.eye(n_channels_use)[:, None, :].repeat(n_rounds_use, axis=1)
-        # Normalise the codes the same way as gene bled codes.
-        bg_bled_codes /= np.linalg.norm(bg_bled_codes, axis=(1, 2))
+        bg_bled_codes = omp_solver.create_background_bled_codes(n_rounds_use, n_channels_use)
         coefficient_image = omp_solver.compute_omp_coefficients(
             pixel_colours=image_colours,
             bled_codes=bled_codes,
             background_codes=bg_bled_codes,
-            colour_norm_factor=nb.call_spots.colour_norm_factor[[tile]].astype(np.float32),
+            colour_norm_factor=nbp_call_spots.colour_norm_factor[[tile]].astype(np.float32),
             maximum_iterations=config["max_genes"],
             dot_product_threshold=config["dp_thresh"],
             normalisation_shift=config["lambda_d"],
         )
         coefficient_image = torch.asarray(coefficient_image).T.reshape(
-            (len(nb.call_spots.gene_names),) + spot_shape_yxz
+            (len(nbp_call_spots.gene_names),) + spot_shape_yxz
         )
 
         self.scores = []
         for g in range(coefficient_image.shape[0]):
             self.scores.append(
-                scores_torch.score_coefficient_image(
-                    coefficient_image[[g]], torch.asarray(nb.omp.spot), torch.asarray(nb.omp.mean_spot)
-                )[0][central_yxz].item()
+                scores_torch.score_coefficient_image(coefficient_image[[g]], torch.asarray(nbp_omp.mean_spot))[0][
+                    central_yxz
+                ].item()
             )
         self.scores = np.array(self.scores, np.float32)
 
@@ -128,11 +135,12 @@ class ViewOMPImage:
         central_pixel = np.array(self.coefficient_image.shape[1:]) // 2
         central_pixels = np.ix_(range(n_genes), [central_pixel[0]], [central_pixel[1]], [central_pixel[2]])
         gene_is_selectable = ~np.isclose(self.coefficient_image[central_pixels].ravel(), 0)
+        gene_is_selectable[spot_gene_no] = True
         if init_select_gene is not None:
             gene_is_selectable[init_select_gene] = True
         assert gene_is_selectable.ndim == 1
 
-        self.gene_names = nb.call_spots.gene_names
+        self.gene_names = nbp_call_spots.gene_names
         self.z_planes = z_planes
         self.selectable_genes = np.where(gene_is_selectable)[0]
         if init_select_gene is None:
@@ -144,7 +152,8 @@ class ViewOMPImage:
         self.function_coefficients = False
         self.show_iteration_counts = False
         self.draw_canvas()
-        plt.show()
+        if show:
+            self.fig.show()
 
     def draw_canvas(self) -> None:
         self.fig, self.axes = plt.subplots(
@@ -153,18 +162,20 @@ class ViewOMPImage:
             squeeze=False,
             gridspec_kw={"width_ratios": [5] * len(self.z_planes) + [1] * 1, "height_ratios": [6, 1]},
             layout="constrained",
-            num="OMP Image",
         )
         # Keep widgets in self otherwise they will get garbage collected and not respond to clicks anymore.
         ax_slider: plt.Axes = self.axes[1, 0]
-        self.gene_slider = Slider(
-            ax_slider,
-            label="Gene",
-            valmin=self.selectable_genes.min(),
-            valmax=self.selectable_genes.max(),
-            valstep=self.selectable_genes,
-            valinit=self.selected_gene,
-        )
+        # Ignore the user warnings that occurs when there is only one gene in the slider.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            self.gene_slider = Slider(
+                ax_slider,
+                label="Gene",
+                valmin=self.selectable_genes.min(),
+                valmax=self.selectable_genes.max(),
+                valstep=self.selectable_genes,
+                valinit=self.selected_gene,
+            )
         self.gene_slider.on_changed(self.gene_selected_updated)
         ax_iteration_count = self.axes[1, 2]
         self.show_iteration_count_button = CheckButtons(
@@ -219,7 +230,7 @@ class ViewOMPImage:
                 ax_title = f"+ {abs(z_plane)}"
             ax.set_title(ax_title)
         self.gene_slider.active = not self.show_iteration_counts
-        plt.draw()
+        self.fig.canvas.draw_idle()
 
     def show_iteration_count_changed(self, _) -> None:
         self.show_iteration_counts = self.show_iteration_count_button.get_status()[0]
@@ -228,183 +239,3 @@ class ViewOMPImage:
     def gene_selected_updated(self, _) -> None:
         self.selected_gene = int(self.gene_slider.val)
         self.draw_data()
-
-
-class ViewOMPPixelColours:
-    def __init__(self, nb: Notebook, spot_no: int, method: str) -> None:
-        """
-        Plot a pixel's true colour, the pixel's sum of gene's colour from OMP, and each OMP assigned gene colour after
-        OMP coefficient weighting.
-
-        Args:
-            - nb (Notebook): the notebook including `omp`.
-            - spot_no (int): the spot's index.
-            - method (str): the spot's method, can be 'omp', 'prob', or 'anchor'.
-        """
-        assert type(nb) is Notebook
-        assert type(spot_no) is int
-        assert type(method) is str
-        assert method in ("omp", "prob", "anchor")
-
-        config = nb.omp.associated_configs["omp"]
-        self.local_yxz, tile = get_spot_position_and_tile(nb, spot_no, method)
-
-        n_rounds_use, n_channels_use = len(nb.basic_info.use_rounds), len(nb.basic_info.use_channels)
-        image_colours = spot_colours_base.get_spot_colours_new(
-            image=nb.filter.images,
-            flow=nb.register.flow,
-            affine=nb.register.icp_correction,
-            yxz=self.local_yxz[np.newaxis],
-            tile=int(tile),
-            use_rounds=nb.basic_info.use_rounds,
-            use_channels=nb.basic_info.use_channels,
-            out_of_bounds_value=0,
-        )
-        image_colours = image_colours.astype(np.float32)
-        assert not np.allclose(image_colours, 0)
-        bled_codes = nb.call_spots.bled_codes.astype(np.float32)
-        assert (~np.isnan(bled_codes)).all(), "bled codes cannot contain nan values"
-        assert np.allclose(np.linalg.norm(bled_codes, axis=(1, 2)), 1), "bled codes must be L2 normalised"
-        bg_bled_codes = np.eye(n_channels_use)[:, None, :].repeat(n_rounds_use, axis=1)
-        # Normalise the codes the same way as gene bled codes.
-        bg_bled_codes /= np.linalg.norm(bg_bled_codes, axis=(1, 2))
-
-        # Get the maximum number of OMP gene assignments made and what genes.
-        omp_solver = coefs.CoefficientSolverOMP()
-        coefficients = omp_solver.compute_omp_coefficients(
-            pixel_colours=image_colours,
-            bled_codes=bled_codes,
-            background_codes=bg_bled_codes,
-            colour_norm_factor=nb.call_spots.colour_norm_factor[[tile]].astype(np.float32),
-            maximum_iterations=config["max_genes"],
-            dot_product_threshold=config["dp_thresh"],
-            normalisation_shift=config["lambda_d"],
-        )[0]
-        final_selected_genes = (~np.isclose(coefficients, 0)).nonzero()[0]
-        self.n_assigned_genes: int = final_selected_genes.size
-        if self.n_assigned_genes == 0:
-            # FIXME: I don't think this is always telling the truth...
-            raise ValueError(f"The selected pixel has no OMP gene assignments to display")
-        # Show the zeroth iteration too with no genes assigned.
-        self.coefficients = np.zeros((self.n_assigned_genes + 1, self.n_assigned_genes), dtype=np.float32)
-        for i in range(1, self.n_assigned_genes + 1):
-            self.coefficients[i] = omp_solver.compute_omp_coefficients(
-                pixel_colours=image_colours,
-                bled_codes=bled_codes,
-                background_codes=bg_bled_codes,
-                colour_norm_factor=nb.call_spots.colour_norm_factor[[tile]].astype(np.float32),
-                maximum_iterations=config["max_genes"],
-                dot_product_threshold=config["dp_thresh"],
-                normalisation_shift=config["lambda_d"],
-            )[0, final_selected_genes]
-        self.assigned_genes_names = nb.call_spots.gene_names[final_selected_genes]
-        self.gene_bled_codes = bled_codes[final_selected_genes].reshape((-1, n_rounds_use, n_channels_use))
-        self.gene_bled_codes = self.gene_bled_codes[np.newaxis].repeat(self.n_assigned_genes + 1, axis=0)
-        self.gene_bled_codes *= self.coefficients[:, :, np.newaxis, np.newaxis]
-        self.true_pixel_colour: np.ndarray = image_colours.reshape((n_rounds_use, n_channels_use))
-        self.true_pixel_colour /= np.sqrt(np.square(self.true_pixel_colour).sum()) + config["lambda_d"]
-        self.omp_final_colour = self.gene_bled_codes.sum(1)
-
-        # Order genes based on their final coefficient strength.
-        gene_order = np.argsort(np.abs(self.coefficients[-1]))[::-1]
-        self.assigned_genes = np.array(range(self.n_assigned_genes))
-        self.assigned_genes = self.assigned_genes[gene_order]
-        self.assigned_genes_names = self.assigned_genes_names[gene_order]
-        self.gene_bled_codes = self.gene_bled_codes[:, gene_order]
-
-        self.selected_iteration = self.n_assigned_genes
-
-        self.draw_canvas()
-        self.draw_data()
-        plt.show()
-
-    def draw_canvas(self) -> None:
-        # Axes for OMP assigned genes, 2 axes for the final OMP colour and the pixel's true colour, 1 for the colourbar.
-        # 1 for the residual colour. 1 for the UI iteration slider.
-        n_columns = max(self.n_assigned_genes, 5)
-        n_rows = 2
-        self.fig, self.axes = plt.subplots(n_rows, n_columns, squeeze=False, num="OMP Colour")
-        self.axes = self.axes.ravel()
-        self.fig.suptitle(f"OMP colour at pixel {tuple(self.local_yxz)}")
-
-        abs_max_colour = np.abs(self.true_pixel_colour).max()
-        abs_max_colour = np.max([abs_max_colour, np.abs(self.omp_final_colour).max()])
-        abs_max_colour = np.max([abs_max_colour, np.abs(self.gene_bled_codes).max()])
-        self.norm = mpl.colors.Normalize(vmin=-abs_max_colour, vmax=abs_max_colour)
-        self.cmap = mpl.colormaps["bwr"]
-
-        self.gene_images: list[plt.AxesImage] = []
-        final_i = self.axes.size - 1
-        for i, ax in enumerate(self.axes):
-            ax: plt.Axes
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.spines.top.set_visible(False)
-            ax.spines.right.set_visible(False)
-            ax.spines.left.set_visible(False)
-            ax.spines.bottom.set_visible(False)
-            ax_title = None
-            shown_axes = False
-            empty_data = np.zeros_like(self.true_pixel_colour.T)
-            if i < self.assigned_genes.size:
-                ax_title = f"{self.assigned_genes_names[i]}"
-                self.gene_images.append(ax.imshow(empty_data, norm=self.norm, cmap=self.cmap))
-                shown_axes = True
-            elif i == final_i - 4:
-                ax_title = f"True"
-                ax.imshow(self.true_pixel_colour.T, norm=self.norm, cmap=self.cmap)
-                shown_axes = True
-            elif i == final_i - 3:
-                ax_title = f"Fit"
-                self.omp_final_im = ax.imshow(empty_data, norm=self.norm, cmap=self.cmap)
-                shown_axes = True
-            elif i == final_i - 2:
-                ax_title = f"True - Fit"
-                self.omp_residual_im = ax.imshow(empty_data, norm=self.norm, cmap=self.cmap)
-                shown_axes = True
-            elif i == final_i - 1:
-                self.iteration_slider = Slider(
-                    ax,
-                    label="Iteration",
-                    valmin=0,
-                    valmax=self.n_assigned_genes,
-                    valinit=self.selected_iteration + 1,
-                    valstep=range(self.n_assigned_genes + 1),
-                    orientation="horizontal",
-                )
-                self.iteration_slider.on_changed(self.iteration_slider_changed)
-            elif i == final_i:
-                self.fig.colorbar(
-                    mpl.cm.ScalarMappable(norm=self.norm, cmap=self.cmap),
-                    cax=self.axes[final_i],
-                    label="Pixel Intensity",
-                )
-            if shown_axes:
-                # Y axis are rounds, x axis are channels.
-                ax.set_xlabel(f"Round")
-                ax.set_ylabel(f"Channel")
-                ax.set_xticks([])
-                ax.set_yticks([])
-                ax.spines.top.set_visible(True)
-                ax.spines.right.set_visible(True)
-                ax.spines.left.set_visible(True)
-                ax.spines.bottom.set_visible(True)
-            if ax_title is not None:
-                ax.set_title(ax_title)
-
-    def draw_data(self) -> None:
-        for i, axes_im in enumerate(self.gene_images):
-            i_gene_bled_code = self.gene_bled_codes[self.selected_iteration, i].T
-            axes_im.set_data(i_gene_bled_code)
-
-        final_omp_colour = self.omp_final_colour[self.selected_iteration]
-        self.omp_residual_im.set_data(self.true_pixel_colour.T - final_omp_colour.T)
-        self.omp_final_im.set_data(final_omp_colour.T)
-
-        plt.draw()
-
-    def iteration_slider_changed(self, _) -> None:
-        new_selected_iteration = int(self.iteration_slider.val)
-        if new_selected_iteration != self.selected_iteration:
-            self.selected_iteration = new_selected_iteration
-            self.draw_data()

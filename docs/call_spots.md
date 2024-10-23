@@ -438,10 +438,30 @@ $$
 
 All that is left to do is multiply the spot colours $F_{src}$ by the updated normalisation factor $Q_{trc}$ to get the final spot colours: $F_{src} \mapsto Q_{trc} F_{src}$.
 
-We then compute the cosine similarity between each spot colour $\mathbf{F_s}$ and each bled code $\mathbf{K_{grc}}$ to get the two variables
+We then compute a score between each spot colour $\mathbf{F_s}$ and each gene bled code $\mathbf{K_{grc}}$:
 
-- `dot_product_gene_no[s]` = $\textrm{argmax}_g \bigg( \dfrac{\mathbf{F_s \cdot K_{g}}}{\| \mathbf{F_s} \| \| \mathbf{K_{g}} \|} \bigg)$,
-- `dot_product_gene_score[s]` = $\textrm{max}_g \bigg( \dfrac{\mathbf{F_s \cdot K_{g}}}{\| \mathbf{F_s} \| \| \mathbf{K_{g}} \|} \bigg)$.
+$$
+\textrm{scores}(g) = \bigg(\frac{\sum_r\big[(||\mathbf{F}||_{sr.} ||\mathbf{K}||_{gr.})^\alpha \sum_c(\hat{\mathbf{F}}_{src}\hat{\mathbf{K}}_{grc})\big]}{\sqrt{\sum_r||\mathbf{F}||_{sr.}^{2\alpha}}\sqrt{\sum_r||\mathbf{K}||_{gr.}^{2\alpha}}} \bigg)
+$$
+
+where
+
+$$
+\hat{\mathbf{F}}_{src} = \frac{\mathbf{F}_{src}}{||\mathbf{F}||_{sr.}}\text{,}\space\space\space\hat{\mathbf{K}}_{grc} = \frac{\mathbf{K}_{grc}}{||\mathbf{K}||_{gr.}}
+$$
+
+and use the best gene score for each spot's assigned gene:
+
+- `dot_product_gene_no[s]` = $\textrm{argmax}_g (\textrm{scores}(g))$
+- `dot_product_gene_score[s]` = $\textrm{max}_g (\textrm{scores}(g))$
+
+$\alpha$ is the config parameter dot_product_weight (typically 0) that can range from 0 to 1. dot_product_weight = 1 
+causes the score to be purely a dot product over each round/channel. $\alpha=0$ forces an equal weighting contribution 
+for each round separately. All scores range from 0 to 1.
+
+??? note "Why is dot_product_weight required?"
+    There is evidence of single dye appearing in data in only a single round. This can be detected as gene reads if 
+    there is no dot_product_weight parameter to add importance to matching brightness in other rounds.
 
 We also compute probabilities for each spot $s$ being assigned to gene $g$ as
 

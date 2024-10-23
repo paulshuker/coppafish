@@ -1,32 +1,27 @@
 2024/mm/dd Version 1 Major Release (v1.0.0):
- * General: From version 1.0.0 onwards, coppafish will automatically detect incompatible notebook versions. A suggested 
-    course of action is given if a compatibility problem is found.
+ * General: Version 1.0.0 onwards automatically detects incompatible notebook versions. A suggested course of action is 
+    given if a compatibility problem is found during runtime.
+ * General: Presequence channels are no longer supported.
+ * General: Many package updates.
  * General: Python 3.11 is now supported.
  * General: Python 3.9 is no longer supported.
- * General: Presequence channels are no longer supported.
- * General: All output variables are now stored within the notebook except for extract images.
- * General: Users can move output directory and/or tiles directory mid-pipeline.
+ * General: All output variables are now stored within the notebook except for extract images, PDF diagnostics, and 
+    pipeline.log files.
+ * General: The notebook is now faster at saving/loading, supports zarr arrays/groups, and has overwrite protection.
+ * General: Better Command Line Interface (CLI).
+ * General: Users can safely move the output directory and/or tiles directory mid-pipeline.
  * General: The notebook can be moved location without breaking diagnostics.
- * General: Package versions are now logged in the pipeline.log file.
  * General: Incorrect numpy data types within the notebook fixed.
- * General: The notebook is now faster at saving/loading, saves zarr arrays/groups, and has overwrite protection.
  * General: Security patches for zipp, urllib3, scikit-learn, tornado, requests, and certifi.
- * General: Many package updates.
+ * General: Package versions are now logged in the pipeline.log file.
  * Documentation: New documentation for exporting data to pciSeq, skipping bad microscope images, running background 
     processes, deleting notebook pages, and retrieving config data from the notebook.
  * Documentation: Detailed method description for find spots, stitch, call spots, and OMP.
- * Viewer: The viewer is more customisable. Users can now toggle whether they want each image shown to be a max 
-    intensity projection or not, which is achieved by setting the max_intensity_projection variable in the viewer to 
-    True or False.
- * Viewer: Viewer is now much faster and less laggy, due to the removal of a transparent copy of the spots, and the 
-    removal of spots not in the legend. The spots are also organised into 3 layers (1 for each method) instead of
-    the old method of a layer for each symbol, which was slow.
- * Viewer: The user can adjust the size of the spots in the viewer.
- * Viewer: The user can adjust the downsample_yx factor of the Viewer images. For NPY files, a downsample of 4 is 
-    recommended as it greatly speeds up the loading of the viewer (30 seconds -> 5 seconds), and the images are still 
-    of high enough quality to see the nuclei.
- * Viewer: Napari has been updated to version 0.4.19, removing Qt warnings and improving stability.
- * Viewer: New find spots viewer.
+ * Viewer: The Viewer is now faster and more responsive.
+ * Viewer: The user can toggle max intensity projection on/off on the background image.
+ * Viewer: The user can adjust the size of spots using the marker size slider.
+ * Viewer: Napari has been updated to version 0.5.4, improving stability.
+ * Diagnostics: New find spots viewer.
  * PDF Diagnostics: New gene spatial heat map PDFs created at runtime.
  * PDF Diagnostics: New stitch PDF created at runtime.
  * Extract: Default z_plane_mean_warning 200 -> 125.
@@ -55,22 +50,23 @@
     and the reference image in the overlapping region. This score is then used in the computation of the final shifts,
     where we deal with the fact that our problem is overspecified. The scoring is used as a weight and the results are
     much better than before.
- * Stitch: The stitching diagnostics have been replaced with 2 new viewers, one for viewing the image as a 
-    checkerboard patten in green and red, with overlapping regions in yellow, and the other for viewing the shifts
-    computed for each tile.
- * Call spots: bad_trc now works with the new colour normalisation factor computation fix.
- * Call spots: some variables now saved as zarr arrays to reduce memory usage and notebook read speed.
+ * Stitch: The stitching diagnostics have been replaced with 2 new viewers, one for viewing the image as a checker-
+    board patten in green and red, with overlapping regions in yellow, and the other for viewing the shifts computed 
+    for each tile.
+ * Call spots: Some variables now saved as zarr arrays to reduce memory usage and notebook read speed.
+ * Call spots: Config parameter bad_trc now works with the new colour normalisation factor computation fix.
+ * Call spots: The final anchor gene scores is no longer a simple dot product. It is a "semi-dot product" based on new 
+    config parameter dot_product_weight to put more importance on each sequencing round matching.
  * OMP: OMP is now truly orthogonal fix. Before, the new gene was weighted using only the residual pixel colour. Now, 
     all genes are re-weighted using the full pixel colour and a new gene is found using the latest residual colour.
  * OMP: After each tile, OMP saves the progress and can continue where it left off if OMP is not completed fully.
  * OMP: Pixel colours are not background fitted before being run through OMP. OMP stops iterating on a pixel if a 
     background gene is assigned.
- * OMP: Better OMP mean spot computation.
+ * OMP: The OMP mean spot used for scoring is fixed and no longer computed. It is less broad, leading to better results.
  * OMP: Less memory intensive by saving each tile's results separately. Also, the results are compressed to disk.
  * OMP: New OMP subplots for the Viewer. Press "Shift + k" to bring up all subplot shortcuts.
  * OMP: Lower memory requirements.
  * OMP: Much faster compute times with and without cuda.
- * OMP: Scores now saved as float16, not int16.
 
 
 2024/05/15 Alpha Update (v0.10.6):
@@ -196,7 +192,8 @@
  * Fixed the diagnostic to turn off the background image in the main viewer by clicking i
  * Fixed the viewer to view the spots in the gene efficiency viewer
  * All viewers are back in the traditional black layout so that we can see the white text on them again
- * An OMP optimisation which reduces the amount of read time by a factor of 2. This speeds up the OMP step significantly.
+ * An OMP optimisation which reduces the amount of read time by a factor of 2. This speeds up the OMP step 
+    significantly.
 
 
 2024/03/04 Alpha Update (v0.9.3):

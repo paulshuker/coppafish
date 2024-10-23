@@ -7,20 +7,13 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Button, RangeSlider
 import mplcursors
 import numpy as np
+import zarr
 
+from ..results_viewer.subplot import Subplot
 from ...call_spots.dot_product import gene_prob_score
 from ...omp import base as omp_base
-from ...setup.notebook import Notebook
+from ...setup.notebook import NotebookPage
 from ...spot_colours import base as spot_colours_base
-
-# FIXME: Code outside any functions or classes will slow coppafish importing significantly.
-try:
-    # So matplotlib plots pop out
-    # Put in try so don't get error when unit testing in continuous integration
-    # which is in headless mode
-    mpl.use("qtagg")
-except ImportError:
-    pass
 
 
 class ColorPlotBase:
@@ -227,317 +220,320 @@ class ColorPlotBase:
         self.im[-1].axes.figure.canvas.draw()
 
 
-class view_codes(ColorPlotBase):
+class ViewSpotColourAndCode(Subplot):
     def __init__(
-        self, nb: Notebook, spot_no: int, tile: int, method: str = "anchor", bg_removed=True, save_loc: str = None
+        self,
+        spot_no: int,
+        spot_score: float,
+        spot_tile: int,
+        spot_colour: np.ndarray,
+        gene_bled_code: np.ndarray,
+        gene_index: int,
+        gene_name: str,
+        colour_norm_factor: np.ndarray,
+        use_channels: list[int],
+        method: str,
+        show: bool = True,
     ):
         """
-        Diagnostic to compare `spot_colour` to `bled_code` of predicted gene.
+        Viewer subplot diagnostic to compare a spot's colour to the calculated gene bled code (`bled_code`). After
+        background removal (if enabled), the spot's colour is divided by its L2 norm over all its values (all
+        rounds/channels).
 
         Args:
-            nb: Notebook containing experiment details. Must have run at least as far as `call_reference_spots`.
-            spot_no: Spot of interest to be plotted. (index of spot from 0 - n_spots)
-            bg_removed: Whether to plot background removed data.
-            method: `'anchor'` or `'omp'` or `'prob'`.
-                Which method of gene assignment used i.e. `spot_no` belongs to `ref_spots` or `omp` page of Notebook.
+            spot_no (int): index of spot in the notebook (number between 0 and n_spots - 1).
+            spot_score (float): score of spot gene assignment.
+            spot_tile (int): index of tile spot is on.
+            spot_colour (`(n_rounds x n_channels_use) ndarray[float]`): spot colour before background removal.
+            gene_bled_code (`(n_rounds x n_channels_use) ndarray[float]`): the spot's gene's final bled code.
+            gene_index (int): the spot's gene's index.
+            gene_name (str): the spot's gene's name.
+            colour_norm_factor (`(n_tiles x n_rounds x n_channels_use) ndarray[float32]`): normalisation factor for
+                each tile, round, and channel that is applied to colours.
+            use_channels (list of int): sequencing channels used.
+            method (str): spot's method. Can be 'anchor', 'omp' or 'prob'.
+            show (bool, optional): show the plot after creating. Turn off for unit testing. Default: true.
+
+        Notes:
+            - Keep the class instance in a named variable when running this subplot. This ensures that the UI buttons
+                continue to allow interaction.
         """
         assert method.lower() in ["anchor", "omp", "prob"], "method must be 'anchor', 'omp' or 'prob'"
-        plt.style.use("dark_background")
-        if method.lower() == "omp":
-            # convert spot_no to be relative to tile
-            spot_no = omp_base.global_to_local_index(nb.basic_info, nb.omp, spot_no)
-            # now that spot_no is relative to tile, get spot_score, spot_colour and gene_no
-            spot_score = nb.omp.results[f"tile_{tile}"].scores[spot_no]
-            self.spot_colour = nb.omp.results[f"tile_{tile}"].colours[spot_no]
-            gene_no = nb.omp.results[f"tile_{tile}"].gene_no[spot_no]
-        elif method.lower() == "anchor":
-            spot_score = nb.call_spots.dot_product_gene_score[spot_no]
-            self.spot_colour = nb.ref_spots.colours[spot_no]
-            gene_no = nb.call_spots.dot_product_gene_no[spot_no]
-        else:
-            spot_score = np.max(nb.call_spots.gene_probabilities[spot_no])
-            self.spot_colour = nb.ref_spots.colours[spot_no]
-            gene_no = np.argmax(nb.call_spots.gene_probabilities[spot_no])
 
-        colour_norm = nb.call_spots.colour_norm_factor[tile]
-        gene_name = nb.call_spots.gene_names[gene_no]
-        # Get spot colour after background fitting
-        self.spot_colour_pb = spot_colours_base.remove_background(self.spot_colour[None].astype(float))[0][0]
-        self.spot_colour = self.spot_colour
-        self.background_removed = bg_removed
-        self.spot_colour, self.spot_colour_pb = self.spot_colour.transpose(), self.spot_colour_pb.transpose()
-        colour_norm = colour_norm.transpose()
+        self.use_colour_norm_factor = True
+        self.remove_background = True
+        self.l2_normalise = True
 
-        if bg_removed:
-            colour = self.spot_colour_pb
-        else:
-            colour = self.spot_colour
-        gene_colour_float_norm = nb.call_spots.bled_codes[gene_no].transpose()
-        gene_colour_float_raw = gene_colour_float_norm / colour_norm
-        float_to_int_scale = np.linalg.norm(colour) / (2 * np.linalg.norm(gene_colour_float_raw))
-        gene_colour = gene_colour_float_raw * float_to_int_scale
-        super().__init__(
-            [colour, gene_colour], colour_norm, slider_pos=[0.85, 0.2, 0.01, 0.75], cbar_pos=[0.9, 0.2, 0.03, 0.75]
+        self.spot_tile = spot_tile
+        self.gene_bled_code = gene_bled_code.astype(np.float32).copy()
+        self.colour_norm_factor = colour_norm_factor.astype(np.float32).copy()
+        self.spot_colour = spot_colour.astype(np.float32).copy()
+        self.fig, self.axes = plt.subplots(2, 1, squeeze=False, sharex=True, sharey=True, layout="constrained")
+        self.fig.supxlabel("Round")
+
+        abs_max = np.max(
+            [
+                np.abs(self.spot_colour.copy()).max(),
+                (np.abs(self.spot_colour.copy() * self.colour_norm_factor[spot_tile])).max(),
+                np.abs(self.gene_bled_code.copy()).max(),
+            ]
         )
-        self.ax[0].set_title(f"Spot {spot_no}: match {str(np.around(spot_score, 2))} " f"to {gene_name}")
-        self.ax[1].set_title(f"Predicted code for Gene {gene_no}: {gene_name}")
-        self.ax[0].set_yticks(ticks=np.arange(self.im_data[0].shape[0]), labels=nb.basic_info.use_channels)
-        self.ax[1].set_xticks(ticks=np.arange(self.im_data[0].shape[1]))
-        self.ax[1].set_xlabel("Round")
-        self.fig.supylabel("colour Channel")
 
-        # for each round, plot a green circle in the channel which is highest for that round
-        n_channels, n_rounds = gene_colour.shape
-        max_channels = np.zeros((n_rounds, n_channels), dtype=bool)
-        max_channel_share = np.zeros((n_rounds, n_channels))
-        total_intensity = 0
-        for r in range(n_rounds):
-            # we will add all channels with intensity > 0.25 * sum of all channels
-            round_colour_norm = gene_colour_float_norm[:, r] / np.sum(gene_colour_float_norm[:, r])
-            good_channels = np.where(round_colour_norm > 0.25)[0]
-            max_channels[r, good_channels] = True
-            max_channel_share[r, good_channels] = gene_colour_float_norm[good_channels, r]
-            total_intensity += np.sum(gene_colour_float_norm[good_channels, r])
-        n_circles = np.sum(max_channels)
-        max_channel_share *= n_circles / total_intensity
-        for j in range(2):
-            for r in range(n_rounds):
-                good_channels = np.where(max_channels[r])[0]
-                for c in good_channels:
-                    scale = max_channel_share[r, c]
-                    default_width = 0.1
-                    default_height = 0.3
-                    circle = mpl.patches.Ellipse(
-                        (r, c),
-                        width=scale * default_width,
-                        height=scale * default_height,
-                        facecolor="lime",
-                        edgecolor="none",
-                        alpha=0.5,
-                    )
-                    self.ax[j].add_patch(circle)
-            # plot a black horizontal line above every third channel
-            for c in range(n_channels):
-                if c % 3 == 0:
-                    self.ax[j].axhline(c - 0.5, color="black", lw=2)
+        self.cmap = mpl.cm.seismic
+        self.norm = mpl.colors.Normalize(vmin=-abs_max, vmax=abs_max)
 
-        self.background_button_ax = self.fig.add_axes([0.85, 0.1, 0.1, 0.05])
+        # Spot colour image.
+        ax: plt.Axes = self.axes[0, 0]
+        self.colour_im = ax.imshow(spot_colour.T, cmap=self.cmap, norm=self.norm)
+        ax.set_title(
+            f"Spot Colour\n{method.capitalize()} index {spot_no}, gene {gene_index} {gene_name}, "
+            + f"score: {'{:.2f}'.format(spot_score)}"
+        )
+        ax.set_ylabel("Channel")
+        ax.set_yticks(range(len(use_channels)), use_channels)
+
+        # Predicted gene bled code image.
+        ax: plt.Axes = self.axes[1, 0]
+        im = ax.imshow(gene_bled_code.T, cmap=self.cmap, norm=self.norm)
+        ax.set_title(f"Gene {gene_index}: {gene_name} predicted bled code")
+        ax.set_xticks(range(spot_colour.shape[0]), range(spot_colour.shape[0]))
+        ax.set_ylabel("Channel")
+        ax.set_yticks(range(len(use_channels)), use_channels)
+
+        # Colour bar on right.
+        cbar_pos = [0.85, 0.4, 0.09, 0.5]  # left, bottom, width, height
+        self.cbar_ax = self.fig.add_axes(cbar_pos)
+        self.cbar = plt.colorbar(im, cax=self.cbar_ax, orientation="vertical", label="Intensity")
+
+        self.button_colour_not_pressed = "red"
+        self.button_colour_pressed = "green"
+        self.use_colour_norm_button_ax = self.fig.add_axes([0.85, 0.25, 0.1, 0.05])
+        self.use_colour_norm_button = Button(self.use_colour_norm_button_ax, "Colour Norm Factor", hovercolor="0.275")
+        self.use_colour_norm_button.label.set_color(self.button_colour_pressed)
+        self.use_colour_norm_button.on_clicked(self.change_use_colour_norm)
+        self.background_button_ax = self.fig.add_axes([0.85, 0.05, 0.1, 0.05])
         self.background_button = Button(self.background_button_ax, "Background", hovercolor="0.275")
-        self.background_button.label.set_color(self.norm_button_colour if bg_removed else self.norm_button_colour_press)
+        self.background_button.label.set_color(self.button_colour_pressed)
         self.background_button.on_clicked(self.change_background)
+        self.norm_button_ax = self.fig.add_axes([0.85, 0.15, 0.1, 0.05])
+        self.norm_button = Button(self.norm_button_ax, "L2 Normalise", hovercolor="0.275")
+        self.norm_button.label.set_color(self.button_colour_pressed)
+        self.norm_button.on_clicked(self.change_norm)
 
-        self.change_norm()  # initialise with method = 'norm'
-        if save_loc:
-            plt.savefig(save_loc, dpi=300)
-            plt.close()
+        self.plot_colour()
+
+        if show:
+            self.fig.show()
+
+    def plot_colour(self) -> None:
+        plot_spot_colour = self.spot_colour.copy()
+        if self.use_colour_norm_factor:
+            plot_spot_colour *= self.colour_norm_factor[self.spot_tile]
+        if self.remove_background:
+            plot_spot_colour -= np.percentile(plot_spot_colour, 25, axis=0, keepdims=True)
+        if self.l2_normalise:
+            plot_spot_colour /= np.linalg.norm(plot_spot_colour, axis=(0, 1), keepdims=True)
+
+        self.colour_im.set_data(plot_spot_colour.T)
+        abs_max = np.max([np.abs(plot_spot_colour).max(), np.abs(self.gene_bled_code).max()])
+        self.colour_im.set_clim(-abs_max, abs_max)
+        self.fig.canvas.draw()
+
+    def change_use_colour_norm(self, _=None) -> None:
+        """
+        Function triggered on press of colour norm factor button. Will either remove/add colour normalisation factor to
+        spot_colour
+        """
+        self.use_colour_norm_factor = not self.use_colour_norm_factor
+        if self.use_colour_norm_factor:
+            self.use_colour_norm_button.label.set_color(self.button_colour_pressed)
         else:
-            plt.show()
+            self.use_colour_norm_button.label.set_color(self.button_colour_not_pressed)
+        self.plot_colour()
 
-    def change_background(self, event=None):
+    def change_background(self, _=None) -> None:
         """
-        Function triggered on press of background button.
-        Will either remove/add background contribution to spot_colour
+        Function triggered on press of background button. Will either remove/add background contribution to spot_colour
         """
-        # need to make new slider at each button press because min/max will change
-        if not self.background_removed:
-            self.im_data[0] = self.spot_colour_pb
-            self.background_removed = True
-            # Change colour when pressed
-            self.background_button.label.set_color(self.norm_button_colour)
+        self.remove_background = not self.remove_background
+        if self.remove_background:
+            self.background_button.label.set_color(self.button_colour_pressed)
         else:
-            self.im_data[0] = self.spot_colour
-            self.background_removed = False
-            self.background_button.label.set_color(self.norm_button_colour_press)
-        # Change norm method before call change_norm so overall it does not change
-        if self.colour_norm is not None:
-            self.method = "norm" if self.method == "raw" else "raw"  # change to the other method
-        self.change_norm()
+            self.background_button.label.set_color(self.button_colour_not_pressed)
+        self.plot_colour()
 
-
-class view_spot(ColorPlotBase):
-    def __init__(self, nb: Notebook, spot_no: int, tile: int, method: str = "anchor", im_size: int = 8):
+    def change_norm(self, _=None) -> None:
         """
-        Diagnostic to show intensity of each colour channel / round in neighbourhood of spot.
-        Will show a grid of `n_use_channels x n_use_rounds` subplots.
+        Function triggered on press of l2 normalise button. Will either remove/add l2 normalisation of spot_colour.
+        """
+        self.l2_normalise = not self.l2_normalise
+        if self.l2_normalise:
+            self.norm_button.label.set_color(self.button_colour_pressed)
+        else:
+            self.norm_button.label.set_color(self.button_colour_not_pressed)
+        self.plot_colour()
+
+
+class ViewSpotColourRegion(Subplot):
+    def __init__(
+        self,
+        spot_no: int,
+        spot_score: float,
+        spot_local_yxz: np.ndarray,
+        spot_tile: int,
+        gene_index: int,
+        gene_name: str,
+        filter_images: zarr.Array,
+        flow: zarr.Array,
+        affine: zarr.Array,
+        colour_norm_factor: np.ndarray,
+        use_rounds: list[int],
+        use_channels: list[int],
+        method: str,
+        show: bool = True,
+    ):
+        """
+        Build a grid of pyplot imshows for each channel and round showing the registered, filtered image intensity in a
+        2D neighbourhood around the spot in Y and X. Out of bounds pixels are not plotted.
 
         Args:
-            nb: Notebook containing experiment details. Must have run at least as far as `call_reference_spots`.
-            spot_no: Spot of interest to be plotted.
-            tile: (int) Tile number of spot.
-            method: `'anchor'` or `'omp'` or `'prob'`.
-                Which method of gene assignment used i.e. `spot_no` belongs to `ref_spots` or `omp` page of Notebook.
-            im_size: Radius of image to be plotted for each channel/round.
+            spot_no (int): index of spot in the notebook (number between 0 and n_spots - 1).
+            spot_score (float): score of spot gene assignment.
+            spot_local_yxz (`(3) ndarray[int]`): the spot's local y, x, and z position relative to the spot's tile's
+                bottom-left corner.
+            spot_tile (int): index of tile spot is on.
+            gene_index (int): the spot's gene's index.
+            gene_name (str): the spot's gene's name.
+            filter_images (`(n_tiles x n_rounds x n_channels) zarray`): the filtered images.
+            flow (): the register optical flow results.
+            affine (): the register affine corrections.
+            colour_norm_factor (`(n_tiles x n_rounds x n_channels_use) ndarray[float32]`): normalisation factor for
+                each tile, round, and channel that is applied to colours.
+            use_rounds (list of int): sequencing rounds.
+            use_channels (list of int): sequencing channels.
+            method (str): spot's method. Can be 'anchor', 'omp' or 'prob'.
+            show (bool, optional): show the plot after creating. Turn off for unit testing. Default: true.
         """
         assert method.lower() in ["anchor", "omp", "prob"], "method must be 'anchor', 'omp' or 'prob'"
-        plt.style.use("dark_background")
-        if method.lower() == "omp":
-            # convert spot_no to be relative to tile
-            spot_no = omp_base.global_to_local_index(nb.basic_info, nb.omp, spot_no)
-            # now that spot_no is relative to tile, get spot_score, spot_colour and gene_no
-            spot_score = nb.omp.results[f"tile_{tile}"].scores[spot_no]
-            gene_no = nb.omp.results[f"tile_{tile}"].gene_no[spot_no]
-            spot_yxz = nb.omp.results[f"tile_{tile}"].local_yxz[spot_no]
-        else:
-            spot_score = nb.call_spots.dot_product_gene_score[spot_no]
-            gene_no = (
-                nb.call_spots.dot_product_gene_no[spot_no]
-                if method.lower() == "anchor"
-                else np.argmax(nb.call_spots.gene_probabilities[spot_no])
-            )
-            spot_yxz = nb.ref_spots.local_yxz[spot_no]
+        self.local_region_shape_yx = (7, 7)
+        assert all([shape % 2 == 1 for shape in self.local_region_shape_yx]), "Must be odd numbers only"
+        self.use_colour_norm_factor = True
+        self.remove_background = False
+        self.l2_normalise = False
 
-        # get gene name, code and colours
-        colour_norm = nb.call_spots.colour_norm_factor[tile].T
-        gene_name = nb.call_spots.gene_names[gene_no]
-        gene_code = nb.call_spots.gene_codes[gene_no].copy()
-        gene_colour = nb.call_spots.bled_codes[gene_no].transpose()
-        n_use_channels, n_use_rounds = colour_norm.shape
-        colour_norm = [val for val in colour_norm.flatten()]
-        spot_yxz_global = spot_yxz + nb.stitch.tile_origin[tile]
-        im_yxz = np.array(
-            np.meshgrid(
-                np.arange(spot_yxz[0] - im_size, spot_yxz[0] + im_size + 1)[::-1],
-                np.arange(spot_yxz[1] - im_size, spot_yxz[1] + im_size + 1),
-                spot_yxz[2],
-            ),
-            dtype=np.int16,
-        ).T.reshape(-1, 3)
-        im_diameter = [2 * im_size + 1, 2 * im_size + 1]
+        self.n_rounds = len(use_rounds)
+        self.n_channels = len(use_channels)
+        Y = np.linspace(0, self.local_region_shape_yx[0] - 1, self.local_region_shape_yx[0])
+        Y -= self.local_region_shape_yx[0] // 2
+        Y += spot_local_yxz[0]
+        X = np.linspace(0, self.local_region_shape_yx[1] - 1, self.local_region_shape_yx[1])
+        X -= self.local_region_shape_yx[1] // 2
+        X += spot_local_yxz[1]
+        yxz_local_region = np.array(np.meshgrid(Y, X, [spot_local_yxz[2]], indexing="ij"), int)
+        # Becomes shape (n_pixels, 3).
+        yxz_local_region = yxz_local_region.reshape((3, -1), order="F").T
+        colours = spot_colours_base.get_spot_colours_new(
+            yxz_local_region, filter_images, flow, affine, int(spot_tile), use_rounds, use_channels
+        )
+        self.colours = colours.reshape(self.local_region_shape_yx + (self.n_rounds, self.n_channels), order="F")
 
-        # get spot colours for each round and channel
-        spot_colours = spot_colours_base.get_spot_colours_new(
-            image=nb.filter.images,
-            flow=nb.register.flow,
-            affine=nb.register.icp_correction,
-            tile=tile,
-            use_rounds=nb.basic_info.use_rounds,
-            use_channels=nb.basic_info.use_channels,
-            yxz=im_yxz,
-        )
-        # n_pixels x n_rounds x n_channels -> n_pixels x n_channels x n_rounds
-        spot_colours = spot_colours.transpose(0, 2, 1)
-        # reshape
-        cr_images = [
-            spot_colours[:, i].reshape(im_diameter[0], im_diameter[1]) * colour_norm[i]
-            for i in range(n_use_rounds * n_use_channels)
-        ]
-        subplot_adjust = [0.07, 0.775, 0.075, 0.92]
-        super().__init__(
-            cr_images,
-            colour_norm,
-            subplot_row_columns=[n_use_channels, n_use_rounds],
-            subplot_adjust=subplot_adjust,
-            fig_size=(13, 8),
-        )
-        # set x, y coordinates to be those of the global coordinate system
-        plot_extent = [
-            im_yxz[:, 1].min() - 0.5 + nb.stitch.tile_origin[tile, 1],
-            im_yxz[:, 1].max() + 0.5 + nb.stitch.tile_origin[tile, 1],
-            im_yxz[:, 0].min() - 0.5 + nb.stitch.tile_origin[tile, 0],
-            im_yxz[:, 0].max() + 0.5 + nb.stitch.tile_origin[tile, 0],
-        ]
-        # for each round, plot a green circle in the channel which is highest for that round
-        n_channels, n_rounds = gene_colour.shape
-        max_channels = np.zeros((n_rounds, n_channels), dtype=bool)
-        max_channel_share = np.zeros((n_rounds, n_channels))
-        total_intensity = 0
-        for r in range(n_rounds):
-            # we will add all channels with intensity > 0.25 * sum of all channels
-            round_colour = gene_colour[:, r] / np.sum(gene_colour[:, r])
-            good_channels = np.where(round_colour > 0.25)[0]
-            max_channels[r, good_channels] = True
-            max_channel_share[r, good_channels] = gene_colour[good_channels, r]
-            total_intensity += np.sum(gene_colour[good_channels, r])
-        n_circles = np.sum(max_channels)
-        max_channel_share *= n_circles / total_intensity
-        max_channels = max_channels.transpose().flatten()
-        max_channel_share = max_channel_share.transpose().flatten()
-        for i in range(self.n_images):
-            # Add cross-hair
-            if max_channels[i]:
-                cross_hair_colour = "lime"  # different color if expected large intensity
-                linestyle = "--"
-                self.ax[i].tick_params(color="lime", labelcolor="lime")
-                for spine in self.ax[i].spines.values():
-                    spine.set_edgecolor("lime")
-                    spine.set_linewidth(max_channel_share[i])
-            else:
-                cross_hair_colour = "k"
-                linestyle = ":"
-            self.ax[i].axes.plot(
-                [spot_yxz_global[1], spot_yxz_global[1]],
-                [plot_extent[2], plot_extent[3]],
-                cross_hair_colour,
-                linestyle=linestyle,
-                lw=1,
-            )
-            self.ax[i].axes.plot(
-                [plot_extent[0], plot_extent[1]],
-                [spot_yxz_global[0], spot_yxz_global[0]],
-                cross_hair_colour,
-                linestyle=linestyle,
-                lw=1,
-            )
-            self.im[i].set_extent(plot_extent)
-            self.ax[i].tick_params(labelbottom=False, labelleft=False)
-            # Add axis labels to subplots of far left column or bottom row
-            if i % n_use_rounds == 0:
-                self.ax[i].set_ylabel(f"{nb.basic_info.use_channels[int(i/n_use_rounds)]}")
-            if i >= self.n_images - n_use_rounds:
-                r = nb.basic_info.use_rounds[i - (self.n_images - n_use_rounds)]
-                self.ax[i].set_xlabel(f"{r}")
+        self.spot_tile = spot_tile
+        self.colour_norm_factor = colour_norm_factor.astype(np.float32).copy()
 
-        self.ax[0].set_xticks([spot_yxz_global[1]])
-        self.ax[0].set_yticks([spot_yxz_global[0]])
-        self.fig.supylabel("colour Channel", size=14)
-        self.fig.supxlabel("Round (Gene Efficiency)", size=14, x=(subplot_adjust[0] + subplot_adjust[1]) / 2)
-        plt.suptitle(
-            f"Spot {spot_no}: match {str(np.around(spot_score, decimals=2))} " f"to {gene_name}. Code = {gene_code}",
-            x=(subplot_adjust[0] + subplot_adjust[1]) / 2,
-            size=16,
+        self.fig, self.axes = plt.subplots(self.n_channels, self.n_rounds, squeeze=False, sharex=True, sharey=True)
+        self.fig.suptitle(
+            f"Spot Colour Region\n{method.capitalize()} index {spot_no}, gene {gene_index} {gene_name}, score: "
+            + f"{'{:.2f}'.format(spot_score)}"
         )
-        self.change_norm()
-        plt.show()
+        self.fig.supxlabel("Round")
+
+        # Spot colour images.
+        abs_max = 0
+        plot_colours = np.zeros(self.local_region_shape_yx + (self.n_rounds, self.n_channels), float)
+        for c in range(self.n_channels):
+            for r in range(self.n_rounds):
+                rc_colours = self.colours[:, :, r, c].copy()
+                if self.use_colour_norm_factor:
+                    rc_colours *= self.colour_norm_factor[self.spot_tile, r, c]
+                plot_colours[:, :, r, c] = rc_colours
+        if self.remove_background:
+            plot_colours -= np.percentile(plot_colours, 25, axis=3, keepdims=True)
+        if self.l2_normalise:
+            plot_colours /= np.linalg.norm(plot_colours, axis=(2, 3), keepdims=True)
+        self.fig.supxlabel("Round")
+        self.fig.supylabel("Channel")
+
+        abs_max = np.abs(plot_colours).max()
+        self.cmap = mpl.cm.seismic
+        self.norm = mpl.colors.Normalize(vmin=-abs_max, vmax=+abs_max)
+
+        for c in range(self.n_channels):
+            for r in range(self.n_rounds):
+                ax: plt.Axes = self.axes[c, r]
+                ax.set_xticks([])
+                ax.set_yticks([])
+                im = ax.imshow(plot_colours[:, :, r, c].T, cmap=self.cmap, norm=self.norm)
+        # Colour bar on right.
+        cbar_pos = [0.88, 0.075, 0.06, 0.85]  # left, bottom, width, height
+        self.cbar_ax = self.fig.add_axes(cbar_pos)
+        self.cbar = plt.colorbar(im, cax=self.cbar_ax, pad=0.1, orientation="vertical", label="Intensity")
+
+        if show:
+            self.fig.show()
 
 
 # We are now going to create a new class that will allow us to view the spots used to calculate the gene efficiency
 # for a given gene. This will be useful for checking that the spots used are representative of the gene as a whole.
-class GeneEfficiencyViewer:
-    def __init__(self, nb: Notebook, mode: str = "prob", score_threshold: float = 0):
+class ViewGeneEfficiencies(Subplot):
+    def __init__(
+        self,
+        nbp_basic: NotebookPage,
+        nbp_ref_spots: NotebookPage,
+        nbp_call_spots: NotebookPage,
+        nbp_omp: NotebookPage,
+        mode: str = "prob",
+        score_threshold: float = 0,
+        show: bool = True,
+    ):
         """
         Diagnostic to show the n_genes x n_rounds gene efficiency matrix as a heatmap.
 
         Args:
-            nb: Notebook containing experiment details. Must have run at least as far as `call_reference_spots`.
+            nbp_basic (NotebookPage): `basic_info` notebook page.
+            nbp_ref_spots (NotebookPage): `ref_spots` notebook page.
+            nbp_call_spots (NotebookPage): `call_spots` notebook page.
+            nbp_omp (NotebookPage): `omp` notebook page.
         """
+        self.nbp_basic = nbp_basic
+        self.nbp_ref_spots = nbp_ref_spots
+        self.nbp_call_spots = nbp_call_spots
+        self.nbp_omp = nbp_omp
         plt.style.use("dark_background")
         # Get gene probabilities and number of spots for each gene
         if mode == "omp":
-            use_tiles = nb.basic_info.use_tiles
-            gene_no = np.concatenate([nb.omp.results[f"tile_{t}"].gene_no for t in use_tiles], axis=0)
-            score = np.concatenate([nb.omp.results[f"tile_{t}"].scores for t in use_tiles], axis=0)
+            gene_no = omp_base.get_all_gene_no(self.nbp_basic, self.nbp_omp)[0]
+            score = omp_base.get_all_scores(self.nbp_basic, self.nbp_omp)[0]
         elif mode == "anchor":
-            gene_no = nb.call_spots.dot_product_gene_no
-            score = nb.call_spots.dot_product_gene_score
+            gene_no = nbp_call_spots.dot_product_gene_no
+            score = nbp_call_spots.dot_product_gene_score
         else:
-            gene_no = np.argmax(nb.call_spots.gene_probabilities, axis=1)
-            score = np.max(nb.call_spots.gene_probabilities, axis=1)
+            gene_no = np.argmax(nbp_call_spots.gene_probabilities[:], axis=1)
+            score = np.max(nbp_call_spots.gene_probabilities[:], axis=1)
 
         # Count the number of spots for each gene
-        n_spots = np.zeros(nb.call_spots.gene_names.shape[0], dtype=int)
-        for i in range(nb.call_spots.gene_names.shape[0]):
-            n_spots[i] = np.sum((gene_no == i) & (score > score_threshold))
+        n_spots = np.zeros(nbp_call_spots.gene_names.shape[0], dtype=int)
+        for i in range(nbp_call_spots.gene_names.shape[0]):
+            n_spots[i] = np.sum((gene_no[:] == i) & (score[:] > score_threshold))
 
         # add attributes
-        self.nb = nb
-        self.n_genes = nb.call_spots.gene_names.shape[0]
+        self.n_genes = nbp_call_spots.gene_names.shape[0]
         self.mode = mode
         self.n_spots = n_spots
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
 
         # set location of axes
         self.ax.set_position([0.1, 0.1, 0.7, 0.8])
-        gene_efficiency = np.linalg.norm(nb.call_spots.free_bled_codes_tile_independent, axis=2)
+        gene_efficiency = np.linalg.norm(nbp_call_spots.free_bled_codes_tile_independent, axis=2)
         self.ax.imshow(
             gene_efficiency, cmap="viridis", vmin=0, vmax=gene_efficiency.max(), aspect="auto", interpolation="none"
         )
@@ -557,14 +553,24 @@ class GeneEfficiencyViewer:
         mplcursors.cursor(self.ax, hover=True).connect("add", lambda sel: self.plot_gene_name(sel.index[0]))
         # 2. Allow genes to be selected by clicking on them
         mplcursors.cursor(self.ax, hover=False).connect(
-            "add", lambda sel: GeneSpotsViewer(nb, gene_index=sel.index[0], mode=mode, score_threshold=score_threshold)
+            "add",
+            lambda sel: GeneSpotsViewer(
+                nbp_basic,
+                nbp_ref_spots,
+                nbp_call_spots,
+                nbp_omp,
+                gene_index=sel.index[0],
+                mode=mode,
+                score_threshold=score_threshold,
+            ),
         )
         # 3. We would like to add a white rectangle around the observed spot when we hover over it. We will
         # use mplcursors to do this. We need to add a rectangle to the plot when hovering over a gene.
         # We also want to turn off annotation when hovering over a gene so we will use the `hover=False` option.
         mplcursors.cursor(self.ax, hover=2).connect("add", lambda sel: self.add_rectangle(sel.index[0]))
 
-        plt.show()
+        if show:
+            self.fig.show()
 
     def add_rectangle(self, index):
         # We need to remove any existing rectangles from the plot
@@ -573,7 +579,7 @@ class GeneEfficiencyViewer:
         for rectangle in self.ax.patches:
             rectangle.remove()
         # We can then add a new rectangle to the plot
-        self.ax.add_patch(Rectangle((-0.5, index - 0.5), self.nb.basic_info.n_rounds, 1, fill=False, edgecolor="white"))
+        self.ax.add_patch(Rectangle((-0.5, index - 0.5), self.nbp_basic.n_rounds, 1, fill=False, edgecolor="white"))
 
     def plot_gene_name(self, index):
         # We need to remove any existing gene names from the plot
@@ -585,7 +591,7 @@ class GeneEfficiencyViewer:
         self.ax.text(
             0.95,
             1.05,
-            self.nb.call_spots.gene_names[index] + f" ({self.n_spots[index]} spots)",
+            self.nbp_call_spots.gene_names[index] + f" ({self.n_spots[index]} spots)",
             transform=self.ax.transAxes,
             size=20,
             horizontalalignment="right",
@@ -595,7 +601,16 @@ class GeneEfficiencyViewer:
 
 
 class GeneSpotsViewer:
-    def __init__(self, nb: Notebook, gene_index: int = 0, mode: str = "prob", score_threshold: float = 0):
+    def __init__(
+        self,
+        nbp_basic: NotebookPage,
+        nbp_ref_spots: NotebookPage,
+        nbp_call_spots: NotebookPage,
+        nbp_omp: NotebookPage,
+        gene_index: int = 0,
+        mode: str = "prob",
+        score_threshold: float = 0,
+    ):
         """
         Diagnostic to show the spots used to calculate the gene efficiency for a given gene.
         Args:
@@ -608,10 +623,12 @@ class GeneSpotsViewer:
         """
         plt.style.use("dark_background")
         assert mode.lower() in ["prob", "anchor", "omp"], "mode must be 'prob', 'anchor' or 'omp'"
-        assert nb.has_page("call_spots"), "Notebook must have run at least as far as `call_spots`"
 
         # Add attributes
-        self.nb = nb
+        self.nbp_basic = nbp_basic
+        self.nbp_ref_spots = nbp_ref_spots
+        self.nbp_call_spots = nbp_call_spots
+        self.nbp_omp = nbp_omp
         self.mode = mode
         self.gene_index = gene_index
         self.score_threshold = score_threshold
@@ -627,37 +644,36 @@ class GeneSpotsViewer:
 
     def load_spots(self, gene_index: int):
         # initialise variables
-        nb = self.nb
-        colour_norm = nb.call_spots.colour_norm_factor
+        nbp_basic = self.nbp_basic
+        nbp_ref_spots = self.nbp_ref_spots
+        nbp_call_spots = self.nbp_call_spots
+        nbp_omp = self.nbp_omp
+        colour_norm = nbp_call_spots.colour_norm_factor
 
         # get spots for gene gene_index
         if self.mode == "omp":
-            use_tiles = nb.basic_info.use_tiles
-            spots = np.concatenate([nb.omp.results[f"tile_{t}"].colours for t in use_tiles], axis=0)
-            gene_no = np.concatenate([nb.omp.results[f"tile_{t}"].gene_no for t in use_tiles], axis=0)
-            score = np.concatenate([nb.omp.results[f"tile_{t}"].scores for t in use_tiles], axis=0)
-            tile = np.concatenate(
-                [t * np.ones(nb.omp.results[f"tile_{t}"].scores.shape[0], dtype=int) for t in use_tiles]
-            )
-            spot_index = np.concatenate([np.arange(nb.omp.results[f"tile_{t}"].scores.shape[0]) for t in use_tiles])
+            spots, tile = omp_base.get_all_colours(self.nbp_basic, self.nbp_omp)
+            gene_no = omp_base.get_all_gene_no(self.nbp_basic, self.nbp_omp)[0]
+            score = omp_base.get_all_scores(self.nbp_basic, self.nbp_omp)[0]
+            spot_index = np.arange(gene_no.size)
         elif self.mode == "anchor":
-            spots = nb.ref_spots.colours[:]
-            gene_no = nb.call_spots.dot_product_gene_no[:]
-            score = nb.call_spots.dot_product_gene_score[:]
-            tile = nb.ref_spots.tile[:]
-            spot_index = np.arange(nb.ref_spots.colours.shape[0])
+            spots = nbp_ref_spots.colours[:]
+            gene_no = nbp_call_spots.dot_product_gene_no[:]
+            score = nbp_call_spots.dot_product_gene_score[:]
+            tile = nbp_ref_spots.tile[:]
+            spot_index = np.arange(nbp_ref_spots.colours.shape[0])
         else:
-            spots = nb.ref_spots.colours[:]
-            gene_no = np.argmax(nb.call_spots.gene_probabilities[:], axis=1)
-            score = np.max(nb.call_spots.gene_probabilities[:], axis=1)
-            tile = nb.ref_spots.tile[:]
-            spot_index = np.arange(nb.ref_spots.colours.shape[0])
+            spots = nbp_ref_spots.colours[:]
+            gene_no = np.argmax(nbp_call_spots.gene_probabilities[:], axis=1)
+            score = np.max(nbp_call_spots.gene_probabilities[:], axis=1)
+            tile = nbp_ref_spots.tile[:]
+            spot_index = np.arange(nbp_ref_spots.colours.shape[0])
 
         # get spots for gene gene_index with score > score_threshold for current mode and valid spots
         invalid = np.any(np.isnan(spots), axis=(1, 2))
         mask = (gene_no == gene_index) & (score > self.score_threshold) & (~invalid)
         spots = spots[mask] * colour_norm[tile[mask]]
-        spots = spot_colours_base.remove_background(spots)[0]
+        spots -= np.percentile(spots, 25, axis=1, keepdims=True)
         score = score[mask]
         # order spots by scores
         permutation = np.argsort(score)[::-1]
@@ -669,7 +685,7 @@ class GeneSpotsViewer:
         # add attributes
         self.spots = spots.reshape(spots.shape[0], -1)
         self.score = score
-        self.bled_code = nb.call_spots.bled_codes[gene_index].reshape(1, -1)
+        self.bled_code = nbp_call_spots.bled_codes[gene_index].reshape(1, -1)
         self.spot_index = spot_index
         self.tile = tile
 
@@ -679,9 +695,9 @@ class GeneSpotsViewer:
         # Now we can plot the spots. We want to create 2 subplots. One with the spots observed and one with the expected
         # spots.
         vmin, vmax = np.percentile(self.spots, [3, 97])
-        gene_code = self.nb.call_spots.gene_codes[self.gene_index]
+        gene_code = self.nbp_call_spots.gene_codes[self.gene_index]
         # we are going to find the mean cosine angle between observed and expected spots in each round
-        n_rounds, n_channels = len(self.nb.basic_info.use_rounds), len(self.nb.basic_info.use_channels)
+        n_rounds, n_channels = len(self.nbp_basic.use_rounds), len(self.nbp_basic.use_channels)
         mean_cosine = np.zeros(n_rounds)
         for r in range(n_rounds):
             colours_r = self.spots[:, r * n_channels : (r + 1) * n_channels].copy()
@@ -701,33 +717,34 @@ class GeneSpotsViewer:
                 a.set_xlabel("Gene Colour")
             a.set_ylabel("Spot")
             # add x ticks of the round number
-            n_rounds, n_channels = len(self.nb.basic_info.use_rounds), len(self.nb.basic_info.use_channels)
+            n_rounds, n_channels = len(self.nbp_basic.use_rounds), len(self.nbp_basic.use_channels)
             x_tick_loc = np.arange(n_channels // 2, n_channels * n_rounds, n_channels)
             if i == 0:
-                x_tick_label = [f"R {r} \n {str(np.around(mean_cosine[r], 2))}" for r in self.nb.basic_info.use_rounds]
+                x_tick_label = [f"R {r} \n {str(np.around(mean_cosine[r], 2))}" for r in self.nbp_basic.use_rounds]
             else:
-                x_tick_label = [f"R {r}" for r in self.nb.basic_info.use_rounds]
+                x_tick_label = [f"R {r}" for r in self.nbp_basic.use_rounds]
             a.set_xticks(x_tick_loc, x_tick_label)
             a.set_yticks([])
 
         # We would like to add red vertical lines to show the start of each round.
         for j, a in enumerate(self.ax):
-            for i in range(self.nb.basic_info.n_rounds):
-                a.axvline(i * len(self.nb.basic_info.use_channels) - 0.5, color="r")
+            for i in range(self.nbp_basic.n_rounds):
+                a.axvline(i * len(self.nbp_basic.use_channels) - 0.5, color="r")
 
         # Set supertitle, colorbar and show plot
         self.fig.suptitle(
-            f"Method: {self.mode}, Gene: {self.nb.call_spots.gene_names[self.gene_index]}, "
+            f"Method: {self.mode}, Gene: {self.nbp_call_spots.gene_names[self.gene_index]}, "
             f"(Code: {gene_code}) \n Score Threshold: {self.score_threshold:.2f}, "
             f"N: {self.spots.shape[0]}"
         )
 
-        self.add_main_widgets()
+        # FIXME: Not working.
+        # self.add_main_widgets()
         plt.show()
 
-    def secondary_plot(self, event=None):
+    def secondary_plot(self, _=None):
         # calculate probability of gene assignment and plot this against the score
-        bled_codes = self.nb.call_spots.bled_codes
+        bled_codes = self.nbp_call_spots.bled_codes
         n_genes, n_rounds, n_channels = bled_codes.shape
         kappa = np.log(1 + n_genes // 75) + 2
         gene_probs = gene_prob_score(
@@ -740,12 +757,13 @@ class GeneSpotsViewer:
         self.ax_scatter.set_ylabel("Gene Score")
         self.ax_scatter.set_title(
             f"Gene Probability vs Gene Score ({self.mode}) for Gene "
-            f"{self.nb.call_spots.gene_names[self.gene_index]}"
+            f"{self.nbp_call_spots.gene_names[self.gene_index]}"
         )
         # add colorbar
         cbar = self.fig_scatter.colorbar(cm.ScalarMappable(norm=None, cmap="viridis"), ax=self.ax_scatter)
         cbar.set_label("Spot Brightness")
-        self.add_secondary_widgets(gene_probs)
+        # FIXME: Not working.
+        # self.add_secondary_widgets(gene_probs)
         plt.show()
 
     def add_main_widgets(self):
@@ -753,7 +771,7 @@ class GeneSpotsViewer:
         # 1. We would like each row of the plot to be clickable, so that we can view the observed spot.
         mplcursors.cursor(self.ax[0], hover=False).connect(
             "add",
-            lambda sel: view_codes(
+            lambda sel: ViewSpotColourAndCode(
                 self.nb, self.spot_index[sel.index[0]], tile=self.tile[sel.index[0]], method=self.mode
             ),
         )
@@ -781,7 +799,7 @@ class GeneSpotsViewer:
         self.ax[0].add_patch(
             Rectangle(
                 (-0.5, index - 0.5),
-                self.nb.basic_info.n_rounds * len(self.nb.basic_info.use_channels),
+                self.nbp_basic.n_rounds * len(self.nbp_basic.use_channels),
                 1,
                 fill=False,
                 edgecolor="white",
@@ -803,7 +821,7 @@ class GeneSpotsViewer:
             print("Too many spots to view")
         else:
             for s in visible_spots:
-                view_codes(self.nb, self.spot_index[s], tile=self.tile[s], method=self.mode)
+                ViewSpotColourAndCode(self.nb, self.spot_index[s], tile=self.tile[s], method=self.mode)
 
 
 class ViewScalingAndBGRemoval:

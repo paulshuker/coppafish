@@ -368,8 +368,8 @@ def ViewTileScaleRegression(
     d_max = config["d_max"]
     target_bled_codes = nb.call_spots.bled_codes
     free_bled_codes = nb.call_spots.free_bled_codes
-    gene_no = np.argmax(nb.call_spots.gene_probabilities, axis=1)
-    n_spots = np.array([np.sum(gene_no == i) for i in range(len(gene_no))])
+    gene_no = np.argmax(nb.call_spots.gene_probabilities[:], axis=1)
+    n_spots = np.array([np.sum(gene_no == i) for i in range(nb.call_spots.gene_names.size)])
     use_channels = nb.basic_info.use_channels
     n_tiles, n_rounds, n_channels_use = tile_scale.shape
 

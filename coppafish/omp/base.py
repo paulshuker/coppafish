@@ -106,7 +106,7 @@ def get_all_colours(
     for t in nbp_basic.use_tiles:
         t_colours: np.ndarray = nbp_omp.results[f"tile_{t}/colours"][:]
         all_colours = np.append(all_colours, t_colours, 0)
-        all_tiles = np.append(all_tiles, np.full(t_colours.size, t, np.int16))
+        all_tiles = np.append(all_tiles, np.full(t_colours.shape[0], t, np.int16))
     return all_colours, all_tiles
 
 

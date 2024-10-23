@@ -57,7 +57,7 @@ class BuildPDF:
         pbar = tqdm(desc="Creating Diagnostic PDFs", total=11, unit="section")
         pbar.set_postfix_str("Loading notebook")
         if type(nb) is str:
-            nb = Notebook(nb)
+            nb = Notebook(nb, must_exist=True)
         pbar.update()
         if output_dir is None:
             output_dir = nbp_file.output_dir
@@ -748,7 +748,7 @@ class BuildPDF:
     def get_omp_text_info(self, omp_page: NotebookPage) -> str:
         output = "OMP\n \n"
         output += self.get_version_from_page(omp_page)
-        output += f"computed spot shape size: {omp_page.spot.shape}\n"
+        output += f"computed spot shape size: {omp_page.mean_spot.shape}\n"
         return output
 
     def create_omp_score_distribution_fig(
@@ -820,7 +820,9 @@ class BuildPDF:
         return fig
 
     def create_omp_spot_shape_fig(self, omp_page: NotebookPage) -> mpl.figure.Figure:
-        fig, axes = self.create_empty_page(2, 4, hide_frames=False, gridspec_kw={"width_ratios": [5, 5, 5, 1]})
+        fig, axes = self.create_empty_page(1, 4, hide_frames=False, gridspec_kw={"width_ratios": [5, 5, 5, 1]})
+        if omp_page.mean_spot.shape[2] < 3:
+            return fig
 
         cmap = mpl.cm.coolwarm
         norm = mpl.colors.Normalize(vmin=-1, vmax=1)
@@ -854,26 +856,6 @@ class BuildPDF:
                     show_left_frame=True,
                     show_right_frame=True,
                 )
-
-        spot_shape = omp_page.spot
-        mid_z = spot_shape.shape[2] // 2
-        max_z = spot_shape.shape[2] - 1
-        for column, z_offset in enumerate(z_offsets):
-            z = min([max([0, z_offset + mid_z]), max_z])
-            title = f"central z"
-            if z_offset != 0:
-                title += f" {'+ ' if z_offset > 0 else '- '}{int(np.abs(z_offset))}"
-            else:
-                title = "Spot shape\n" + title
-            axes[1, column].set_title(title)
-            axes[1, column].imshow(spot_shape[:, :, z], cmap=cmap, norm=norm, aspect="equal")
-            self.empty_plot_ticks(
-                axes[1, column],
-                show_top_frame=True,
-                show_bottom_frame=True,
-                show_left_frame=True,
-                show_right_frame=True,
-            )
 
         fig.tight_layout()
         return fig

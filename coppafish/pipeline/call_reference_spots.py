@@ -19,10 +19,10 @@ def call_reference_spots(
 ) -> Tuple[NotebookPage, NotebookPage]:
     """
     Function to do gene assignments to reference spots. In doing so we compute some important parameters for the
-    downstream analysis.
+    downstream OMP analysis also.
 
     Args:
-        config: dict
+        - config: dict
             The configuration dictionary for the call spots page. Should contain the following keys:
             - gene_prob_threshold: float
                 The threshold for the gene probability score.
@@ -33,12 +33,9 @@ def call_reference_spots(
                 The concentration parameter for the parallel direction of the prior.
             - concentration_param_perpendicular: float
                 The concentration parameter for the perpendicular direction of the prior.
-        nbp_ref_spots: NotebookPage
-            The reference spots notebook page. This will be altered in the process.
-        nbp_file: NotebookPage
-            The file names notebook page.
-        nbp_basic: NotebookPage
-            The basic info notebook page.
+        - nbp_ref_spots (NotebookPage): `ref_spots` notebook page.
+        - nbp_file (NotebookPage): `file_names` notebook page.
+        - nbp_basic (NotebookPage): `basic_info` notebook page.
 
     Returns:
         nbp: NotebookPage
@@ -102,7 +99,7 @@ def call_reference_spots(
         colour_norm_factor_initial[colour_norm_factor_initial == np.inf] = 1
         spot_colours[spot_tile == t] *= colour_norm_factor_initial[t]
     # remove background as constant offset across different rounds of the same channel
-    spot_colours -= np.percentile(spot_colours, 25, axis=1)[:, None, :]
+    spot_colours -= np.percentile(spot_colours, 25, axis=1, keepdims=True)
 
     # 2. Compute gene probabilities for each spot
     bled_codes = raw_bleed_matrix[gene_codes]
@@ -158,20 +155,21 @@ def call_reference_spots(
         ) / np.sum(np.sqrt(n_spots_per_gene) * free_bled_codes_tile_indep[rc_genes, r, c] ** 2)
     bled_codes = free_bled_codes_tile_indep * rc_scale[None, :, :]
     # normalise the constrained bled codes
-    bled_codes /= np.linalg.norm(bled_codes, axis=(1, 2))[:, None, None]
+    bled_codes /= np.linalg.norm(bled_codes, axis=(1, 2), keepdims=True)
 
-    # 6. compute the scale factor Q_trc maximising the similarity between the tile independent codes and the constrained
-    # bled codes
+    # 6. Compute the scale factor Q_trc maximising the similarity between the tile independent codes and the
+    # constrained bled codes.
     tile_scale = np.ones((n_tiles, n_rounds, n_channels_use), np.float32)
     for t, r, c in itertools.product(use_tiles, range(n_rounds), range(n_channels_use)):
-        relevant_genes = np.where(gene_codes[:, r] == config["target_values"][c])[0]
+        relevant_genes = np.where(gene_codes[:, r] == config["d_max"][c])[0]
         n_spots_per_gene = np.array(
             [
                 np.sum((prob_mode_initial == g) & (prob_score_initial > prob_threshold) & (spot_tile == t))
                 for g in relevant_genes
             ]
         )
-        if np.sum(n_spots_per_gene) == 0:
+        if n_spots_per_gene.sum() == 0:
+            log.warn(f"No relevant spots found to calculate tile scale factor Q for {t=}, {r=}, {c=}")
             continue
         tile_scale[t, r, c] = np.sum(
             np.sqrt(n_spots_per_gene) * bled_codes[relevant_genes, r, c] * free_bled_codes[relevant_genes, t, r, c]
@@ -185,7 +183,7 @@ def call_reference_spots(
     gene_prob = zarr.array(gene_prob, store=os.path.join(nbp_file.output_dir, "gene_prob.zarray"), **kwargs)
     # Computing all dot product scores at once can take too much memory.
     gene_dot_products = np.zeros((n_spots, n_genes), np.float16)
-    n_max_score_pixels = 0.7 * system.get_available_memory() * 1e9 / (n_spots * n_genes * n_rounds * n_channels_use * 4)
+    n_max_score_pixels = 8.7e-2 * system.get_available_memory() * 1e9 / (n_genes * n_rounds * n_channels_use)
     n_max_score_pixels = int(max(1, n_max_score_pixels))
     n_batches = maths.ceil(n_spots / n_max_score_pixels)
     log.debug(f"{n_max_score_pixels=}")
@@ -193,11 +191,12 @@ def call_reference_spots(
         index_min = batch_i * n_max_score_pixels
         index_max = min(spot_colours.shape[0], (batch_i + 1) * n_max_score_pixels)
         gene_dot_products[index_min:index_max] = dot_product_score(
-            spot_colours=spot_colours[index_min:index_max].reshape((-1, n_rounds * n_channels_use)),
-            bled_codes=bled_codes.reshape((n_genes, n_rounds * n_channels_use)),
-        )[-1]
-    dp_mode, dp_score = np.argmax(gene_dot_products, axis=1).astype(np.int16), np.max(gene_dot_products, axis=1)
-    dp_mode = zarr.array(dp_mode, store=os.path.join(nbp_file.output_dir, "dp_mode.zarray"), **kwargs)
+            spot_colours=spot_colours[index_min:index_max],
+            bled_codes=bled_codes,
+            dot_product_weight=config["dot_product_weight"],
+        )
+    dp_gene, dp_score = np.argmax(gene_dot_products, axis=1).astype(np.int16), np.max(gene_dot_products, axis=1)
+    dp_gene = zarr.array(dp_gene, store=os.path.join(nbp_file.output_dir, "dp_mode.zarray"), **kwargs)
     dp_score = zarr.array(dp_score, store=os.path.join(nbp_file.output_dir, "dp_score.zarray"), **kwargs)
     # update bleed matrix
     good = prob_score > prob_threshold
@@ -206,7 +205,7 @@ def call_reference_spots(
 
     # 8. Save the results.
     nbp.intensity = zarr.array(intensity, store=os.path.join(nbp_file.output_dir, "intensity.zarray"), **kwargs)
-    nbp.dot_product_gene_no, nbp.dot_product_gene_score = dp_mode, dp_score
+    nbp.dot_product_gene_no, nbp.dot_product_gene_score = dp_gene, dp_score
     nbp.gene_probabilities_initial = gene_prob_initial
     nbp.gene_probabilities = gene_prob
     nbp.gene_names, nbp.gene_codes = gene_names, gene_codes

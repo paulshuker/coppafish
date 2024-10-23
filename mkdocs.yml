@@ -1,9 +1,13 @@
 site_name: Coppafish Documentation
+repo_name: Coppafish
 repo_url: https://github.com/paulshuker/coppafish
 
 theme:
   name: material
   logo: images/logo.svg
+
+  icon:
+    repo: fontawesome/brands/github
 
   features:
     # Cool section selection at top (sticky makes tabs stay shown when scrolling)

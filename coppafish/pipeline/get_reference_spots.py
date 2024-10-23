@@ -32,6 +32,7 @@ def get_reference_spots(
     Returns:
         `NotebookPage[ref_spots]` - Page containing intensity of each reference spot on each imaging round/channel.
     """
+    log.info("Get ref spots started")
     # Create a notebook page for ref_spots which stores information like local coords, tile_no of each spot and more.
     nbp = NotebookPage("ref_spots")
     # The code is going to loop through all tiles, as we expect some anchor spots on each tile but r and c should stay
@@ -39,7 +40,6 @@ def get_reference_spots(
     tile_origin = nbp_stitch.tile_origin
     r = nbp_basic.anchor_round
     c = nbp_basic.anchor_channel
-    log.debug("Get ref spots started")
     use_tiles, use_rounds, use_channels = np.array(nbp_basic.use_tiles), nbp_basic.use_rounds, nbp_basic.use_channels
 
     # all means all spots found on the reference round / channel
@@ -87,6 +87,8 @@ def get_reference_spots(
             use_channels=use_channels,
         )
         valid = ~(np.isnan(colours).any(1).any(1))
+        # Zeros in all channels for any round is an invalid spot.
+        valid &= ~(np.isclose(colours, 0).all(2).any(1))
         log.debug(f"Valid ref pixel colours: {valid.sum()} out of {valid.size} for tile {t}")
         spot_colours = np.append(spot_colours, colours[valid], axis=0)
         local_yxz = np.append(local_yxz, nd_local_yxz[in_tile][valid], axis=0)
@@ -102,6 +104,6 @@ def get_reference_spots(
     nbp.local_yxz = local_yxz
     nbp.tile = tile
     nbp.colours = spot_colours
-    log.debug("Get ref spots complete")
+    log.info("Get ref spots complete")
 
     return nbp

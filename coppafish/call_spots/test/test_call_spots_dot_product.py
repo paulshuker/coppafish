@@ -3,6 +3,38 @@ import numpy as np
 from coppafish.call_spots import dot_product
 
 
+def test_dot_product():
+    n_spots, n_rounds, n_channels_use, n_genes = 1, 2, 2, 1
+    spot_colours = np.zeros((n_spots, n_rounds, n_channels_use), np.float32)
+    spot_colours[0, 0, 1] = np.sqrt(0.1)
+    spot_colours[0, 1, 1] = np.sqrt(0.9)
+    bled_codes = np.zeros((n_genes, n_rounds, n_channels_use))
+    bled_codes[0, 0, 1] = np.sqrt(0.5)
+    bled_codes[0, 1, 1] = np.sqrt(0.5)
+
+    scores = dot_product.dot_product_score(spot_colours, bled_codes, 0)
+    assert type(scores) is np.ndarray
+    assert scores.shape == (n_spots, n_genes)
+    assert np.isclose(scores, 1)
+    assert (scores >= 0).all()
+    assert (scores <= 1).all()
+    scores = dot_product.dot_product_score(spot_colours, bled_codes, 1)
+    assert type(scores) is np.ndarray
+    assert scores.shape == (n_spots, n_genes)
+    assert np.isclose(scores, 0.8944, atol=1e-3)
+    assert (scores >= 0).all()
+    assert (scores <= 1).all()
+    lower_bound = scores.item()
+    for dot_product_weight in [(10 - i - 1) / 10 for i in range(9)]:
+        scores = dot_product.dot_product_score(spot_colours, bled_codes, dot_product_weight)
+        assert type(scores) is np.ndarray
+        assert scores.shape == (n_spots, n_genes)
+        assert (scores < 1).all() and (scores > lower_bound).all()
+        assert (scores >= 0).all()
+        assert (scores <= 1).all()
+        lower_bound = scores.item()
+
+
 def test_gene_prob_score():
     # Test that the gene probabilities are different when kappa is varied
     rng = np.random.RandomState(0)
@@ -14,57 +46,19 @@ def test_gene_prob_score():
     spot_colours = (rng.rand(n_spots, n_rounds, n_channels_use) - 0.5) * 2
     bled_codes = rng.rand(n_genes, n_rounds, n_channels_use)
     kappa_option = 1
+    spot_colours_clone = spot_colours.copy()
+    bled_codes_clone = bled_codes.copy()
     probabilities_1 = dot_product.gene_prob_score(spot_colours, bled_codes)
+    assert np.allclose(spot_colours, spot_colours_clone), "Function changed spot_colours input"
+    assert np.allclose(bled_codes, bled_codes_clone), "Function changed bled_codes input"
     probabilities_2 = dot_product.gene_prob_score(spot_colours, bled_codes, kappa_option)
+    assert np.allclose(spot_colours, spot_colours_clone), "Function changed spot_colours input"
+    assert np.allclose(bled_codes, bled_codes_clone), "Function changed bled_codes input"
     assert isinstance(probabilities_1, np.ndarray), "Expected ndarray as output"
     assert isinstance(probabilities_2, np.ndarray), "Expected ndarray as output"
     assert probabilities_1.shape == probabilities_2.shape == (n_spots, n_genes), "Expected shape (n_spots, n_genes)"
     assert not np.allclose(probabilities_1, probabilities_2), "Gene probabilities should change as kappa varies"
 
 
-def test_dot_product():
-    rng = np.random.RandomState(0)
-    n_spots, n_rounds, n_channels_use, n_genes = 100, 3, 4, 4
-    # set gene number for each spot
-    gene_no = np.arange(n_spots) % n_genes
-    # create gene codes
-    bled_codes = np.array([np.roll(np.eye(n_rounds, n_channels_use), i, axis=1) for i in range(n_genes)])
-    bled_codes = bled_codes.reshape(n_genes, n_rounds * n_channels_use)
-    # add a small amount of noise to the bled codes
-    bled_codes += rng.rand(n_genes, n_rounds * n_channels_use) * 0.1
-    bled_codes /= np.linalg.norm(bled_codes, axis=1, keepdims=True)
-    # create spot colours (with noise)
-    spot_colours_noise_free = np.array([bled_codes[gene_no[i]] for i in range(n_spots)])
-    noise = rng.rand(n_spots, n_rounds * n_channels_use) * 0.1
-    # calculate dot product scores of noise free spot colours and bled codes with no variance terms or norm shift
-    gene_prediction, gene_score, gene_score_second, all_score = dot_product.dot_product_score(
-        spot_colours=spot_colours_noise_free, bled_codes=bled_codes
-    )
-    assert gene_prediction.shape == gene_score.shape == gene_score_second.shape == (n_spots,), (
-        f"Expected shape {(n_spots, )}. Actual shapes: gene_no: {gene_prediction.shape}, "
-        f"gene_score: {gene_score.shape}, gene_score_second: {gene_score_second.shape}"
-    )
-    assert all_score.shape == (n_spots, n_genes), f"Expected shape {(n_spots, n_genes)}. Actual shape {all_score.shape}"
-    assert gene_prediction.tolist() == gene_no.tolist(), "Expected the same gene numbers"
-    assert np.isclose(gene_score.max(), 1, atol=1e-5), "Expected max gene scores to be 1"
-
-    # calculate dot product scores of noisy spot colours and bled codes with no variance terms or norm shift
-    gene_prediction, gene_score, gene_score_second, all_score = dot_product.dot_product_score(
-        spot_colours=spot_colours_noise_free + 0.1 * noise, bled_codes=bled_codes
-    )
-    assert np.sum(gene_prediction == gene_no) / n_spots > 0.9, "Expected most gene numbers to be correct"
-    assert np.sum(all_score > 1) == 0, "Expected all scores to be less than 1"
-
-    # now add variances
-    variance = np.ones(n_rounds * n_channels_use) * 100**2
-    variance[0] = 1
-    # repeat the variance for each spot
-    variance = variance[None, :].repeat(n_spots, 0)
-    gene_prediction, gene_score, gene_score_second, _ = dot_product.dot_product_score(
-        spot_colours=spot_colours_noise_free + 0.1 * noise, bled_codes=bled_codes, variance=variance
-    )
-    # we expect this method to only care about r0c0, so the gene score is just going to be
-    # score[s, g] = spot_colours[s, 0] / bled_codes[g, 0]
-    expected_scores = np.array([spot_colours_noise_free[i, 0] / bled_codes[:, 0] for i in range(n_spots)])
-    expected_gene_prediction = np.argmax(expected_scores, axis=1)
-    assert np.allclose(gene_prediction, expected_gene_prediction), "Expected gene predictions to be correct"
+if __name__ == "__main__":
+    test_dot_product()
