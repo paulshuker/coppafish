@@ -38,13 +38,13 @@ def compare_spots(
     assert spot_positions_0.shape[1] == 3
     assert type(spot_gene_indices_0) is np.ndarray
     assert spot_gene_indices_0.ndim == 1
-    spot_gene_indices_0.shape[0] == spot_positions_0.shape[0]
+    assert spot_gene_indices_0.shape[0] == spot_positions_0.shape[0]
     assert type(spot_positions_1) is np.ndarray
     assert spot_positions_1.ndim == 2
     assert spot_positions_1.shape[1] == 3
     assert type(spot_gene_indices_1) is np.ndarray
     assert spot_gene_indices_1.ndim == 1
-    spot_gene_indices_1.shape[0] == spot_positions_1.shape[0]
+    assert spot_gene_indices_1.shape[0] == spot_positions_1.shape[0]
     assert type(distance_threshold) is float
     assert distance_threshold > 0
 

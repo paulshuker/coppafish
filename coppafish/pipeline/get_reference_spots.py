@@ -44,6 +44,7 @@ def get_reference_spots(
 
     tile_origins = nbp_stitch.tile_origin.astype(np.float32)
     tile_centres = duplicates.get_tile_centres(nbp_basic.tile_sz, len(nbp_basic.use_z), tile_origins)
+    tile_origins = torch.from_numpy(tile_origins)
 
     # all means all spots found on the reference round / channel
     all_local_yxz = np.zeros((0, 3), dtype=np.int16)

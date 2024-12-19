@@ -3,15 +3,17 @@ import tempfile
 
 import matplotlib
 import numpy as np
+import pytest
 import tifffile
 import zarr
 
-from coppafish.plot.results_viewer.base_new import Viewer
+from coppafish.plot.results_viewer.base import Viewer
 from coppafish.setup.notebook_page import NotebookPage
 
 
+@pytest.mark.integration
 def test_Viewer() -> None:
-    # Using a headless backend to support headless unit testings of the Viewer..
+    # Using a headless backend to support headless unit testing the Viewer.
     matplotlib.use("Agg")
 
     rng = np.random.RandomState(0)
@@ -143,8 +145,8 @@ def test_Viewer() -> None:
             "minimum_intensity": 0.001,
             "max_genes": 2,
             "dot_product_threshold": 0.01,
-            "dot_product_weight": 0.4,
-            "coefficient_normalisation_shift": 0.001,
+            "alpha": 0.0,
+            "beta": 1.0,
         }
     }
     nbp_omp = NotebookPage("omp", omp_config)
@@ -193,7 +195,7 @@ def test_Viewer() -> None:
         # Check clicking the gene legend.
         for _ in range(10):
             event = type("Event", (object,), {})()
-            event.inaxes = viewer.legend.canvas.axes
+            event.inaxes = viewer.legend_.canvas.axes
             event.xdata = rng.rand()
             event.ydata = rng.rand()
             button = type("Button", (object,), {})()

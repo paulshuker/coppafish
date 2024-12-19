@@ -1,13 +1,13 @@
-from itertools import product
 import os
 import pickle
-from typing import Union, Tuple
+from itertools import product
+from typing import Tuple, Union
 
 import numpy as np
-from scipy import signal
 import skimage
-from tqdm import tqdm
 import zarr
+from scipy import signal
+from tqdm import tqdm
 
 from .. import spot_colours
 from ..setup.notebook_page import NotebookPage

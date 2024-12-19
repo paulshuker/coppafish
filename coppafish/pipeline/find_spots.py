@@ -3,18 +3,17 @@ import os
 
 import numpy as np
 import tqdm
-import tqdm
 import zarr
 
-from .. import find_spots as fs
 from .. import log
-from ..find_spots import detect
+from ..find_spots import base, detect
+from ..setup.config_section import ConfigSection
 from ..setup.notebook_page import NotebookPage
 from ..utils import indexing
 
 
 def find_spots(
-    config: dict,
+    config: ConfigSection,
     nbp_basic: NotebookPage,
     nbp_file: NotebookPage,
     nbp_filter: NotebookPage,
@@ -36,10 +35,10 @@ def find_spots(
     log.info("Find spots started")
 
     # Phase 0: Initialisation
-    nbp = NotebookPage("find_spots", {"find_spots": config})
+    nbp = NotebookPage("find_spots", {config.name: config.to_dict()})
     auto_thresh_multiplier = config["auto_thresh_multiplier"]
     if auto_thresh_multiplier <= 0:
-        raise ValueError(f"The auto_thresh_multiplier in 'find_spots' config must be positive")
+        raise ValueError("The auto_thresh_multiplier in 'find_spots' config must be positive")
     n_z = np.max([1, nbp_basic.is_3d * nbp_basic.nz])
     max_spots = maths.floor(config["max_spots_percent"] * nbp_basic.tile_sz**2 / 100)
     INVALID_AUTO_THRESH = -1
@@ -69,13 +68,16 @@ def find_spots(
 
     # Phase 2: Detect spots on uncompleted tiles, rounds and channels
     pbar = tqdm.tqdm(total=use_indices.sum(), desc="Finding spots", unit="image")
-    for t, r, c in np.argwhere(use_indices):
+    for t, r, c in np.argwhere(use_indices).tolist():
         pbar.set_postfix_str(f"{t=}, {r=}, {c=}")
-        image_trc = nbp_filter.images[t, r, c]
+        image_trc = nbp_filter.images[t, r, c].astype(np.float32)
 
         # Compute the image's auto threshold to detect spots.
         mid_z = image_trc.shape[2] // 2
-        auto_thresh[t, r, c] = float(auto_thresh_multiplier * np.median(np.abs(image_trc[..., mid_z])).clip(1))
+        auto_thresh[t, r, c] = auto_thresh_multiplier * np.median(np.abs(image_trc[..., mid_z]))
+
+        if auto_thresh[t, r, c] <= 0:
+            auto_thresh[t, r, c] = auto_thresh_multiplier
 
         local_yxz, spot_intensity = detect.detect_spots(
             image_trc,
@@ -86,7 +88,7 @@ def find_spots(
         )
         if r != nbp_basic.anchor_round:
             # On imaging rounds, only keep the highest intensity spots on each z plane.
-            local_yxz = fs.filter_intense_spots(local_yxz, spot_intensity, n_z, max_spots)
+            local_yxz = base.filter_intense_spots(local_yxz, spot_intensity, n_z, max_spots)
 
         spot_no[t, r, c] = local_yxz.shape[0]
         log.debug(f"Found {spot_no[t, r, c]} spots on {t=}, {r=}, {c=}")

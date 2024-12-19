@@ -1,7 +1,6 @@
 build
 coppafish.egg-info
 **/__pycache__
-.editorconfig
 **/integration_dir*
 **/.integration_dir*
 **/unit_test_dir

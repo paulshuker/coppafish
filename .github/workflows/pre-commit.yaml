@@ -1,0 +1,38 @@
+name: Pre-commit
+
+# Trigger on any push or pull requests.
+on:
+  push:
+
+jobs:
+  run-tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version:
+          - "3.11"
+    name: Tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install default dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-torch.txt
+
+      - name: Install dev packages
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Check pre-commit hooks
+        run: |
+          pre-commit autoupdate
+          pre-commit run --all-files --show-diff-on-failure

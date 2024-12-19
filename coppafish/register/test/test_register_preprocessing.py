@@ -23,7 +23,7 @@ def test_split_3d_image():
     rng = np.random.RandomState(23)
     im = rng.rand(576, 576, 10)
     # Test the function
-    im_split, pos = reg_pre.split_image(im, n_subvols_yx=4, overlap=1/3)
+    im_split, pos = reg_pre.split_image(im, n_subvols_yx=4, overlap=1 / 3)
     # Test that the shape is correct
     expected_size_yx = 192
     assert im_split.shape == (16, expected_size_yx, expected_size_yx, 10)
@@ -62,8 +62,8 @@ def test_merge_subvols():
     # Set up data (576, 576, 10)
     im = rng.rand(576, 576, 10)
     # Test the function
-    im_split, pos = reg_pre.split_image(im, n_subvols_yx=4, overlap=1/3)
-    im_merged = reg_pre.merge_subvols(im_split=im_split, positions=pos, output_shape=im.shape, overlap=1/3)
+    im_split, pos = reg_pre.split_image(im, n_subvols_yx=4, overlap=1 / 3)
+    im_merged = reg_pre.merge_subvols(im_split=im_split, positions=pos, output_shape=im.shape, overlap=1 / 3)
     # Test that the shape is correct
     assert im_merged.shape == im.shape
     # Test that the values are correct

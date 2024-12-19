@@ -1,13 +1,13 @@
-from typing import Optional, List
 import warnings
+from typing import List, Optional
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.widgets import TextBox, CheckButtons
 import numpy as np
+from matplotlib.widgets import CheckButtons, TextBox
 
-from ...setup.notebook import Notebook
 from ...call_spots.dot_product import dot_product_score
+from ...setup.notebook import Notebook
 
 
 class HistogramScore:
@@ -69,13 +69,17 @@ class HistogramScore:
         self.use = np.isin(self.gene_no, self.genes_use)  # which spots to plot
 
         # DP score
-        self.score[:, 0] = dot_product_score(spot_colours_bg_removed, bled_codes)[1]
+        self.score[:, 0] = dot_product_score(spot_colours_bg_removed[np.newaxis], bled_codes[np.newaxis, np.newaxis])[
+            0, 1
+        ]
         # DP score no background
-        self.score[:, 1] = dot_product_score(spot_colours, bled_codes)[1]
+        self.score[:, 1] = dot_product_score(spot_colours[np.newaxis], bled_codes[np.newaxis, np.newaxis])[0, 1]
         # DP score no gene efficiency
-        self.score[:, 2] = dot_product_score(spot_colours_bg_removed, bled_codes_initial)[1]
+        self.score[:, 2] = dot_product_score(
+            spot_colours_bg_removed[np.newaxis], bled_codes_initial[np.newaxis, np.newaxis]
+        )[0, 1]
         # DP score no background or gene efficiency
-        self.score[:, 3] = dot_product_score(spot_colours, bled_codes_initial)[1]
+        self.score[:, 3] = dot_product_score(spot_colours[np.newaxis], bled_codes_initial[np.newaxis, np.newaxis])[0, 1]
 
         # Initialise plot
         self.fig, self.ax = plt.subplots(1, 1, figsize=(11, 5))

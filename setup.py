@@ -1,4 +1,6 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
+
+__version__ = ""
 
 with open("coppafish/_version.py", "r") as f:
     exec(f.read())
@@ -27,7 +29,6 @@ setup(
         "dash-html-components",
         "dash_daq",
         "dask",
-        "datashader",
         "distinctipy",
         "h5py",
         "joblib",
@@ -36,8 +37,7 @@ setup(
         "mplcursors",
         "napari[pyqt5]",
         "nd2",
-        "numpy<2.0.0",
-        "numpy_indexed",
+        "numpy<2.1",
         "opencv-python-headless",
         "pandas",
         "psutil",
@@ -52,9 +52,8 @@ setup(
     ],
     package_data={
         "coppafish.setup": [
-            "settings.default.ini",
+            "default.ini",
             "notebook_comments.json",
-            "dye_camera_laser_raw_intensity.csv",
             "default_bleed.npy",
             "default_psf.npz",
         ],

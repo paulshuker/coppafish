@@ -1,34 +1,7 @@
-from typing import List, Optional, Union
-
 import numpy as np
-import numpy.typing as npt
 
-from .. import log
 from ..omp import base as omp_base
 from ..setup.notebook import Notebook
-from ..setup.notebook_page import NotebookPage
-
-
-def get_spot_intensity(spot_colors: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
-    """
-    Finds the max intensity for each imaging round across all imaging channels for each spot.
-    Then median of these max round intensities is returned.
-
-    Args:
-        spot_colors (`[n_spots x n_rounds x n_channels] ndarray[float]`: spot colors normalised to equalise intensities
-            between channels (and rounds).
-
-    Returns:
-        `[n_spots] ndarray[float]`: index `s` is the intensity of spot `s`.
-
-    Notes:
-        Logic is that we expect spots that are genes to have at least one large intensity value in each round
-        so high spot intensity is more indicative of a gene.
-    """
-    if (spot_colors <= -15_000).sum() > 0:
-        log.warn(f"Found spot colors <= -15000")
-    # Max over all channels, then median over all rounds
-    return np.median(np.max(np.abs(spot_colors), axis=2), axis=1)
 
 
 def get_intensity_thresh(nb: Notebook) -> float:
