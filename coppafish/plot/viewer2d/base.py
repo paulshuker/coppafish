@@ -89,7 +89,7 @@ class Viewer2D:
             nb = Notebook(nb, must_exist=True)
         if not nb.has_page("call_spots"):
             raise ValueError(
-                f"Given notebook does not have call spots. Complete up to call spots before opening the Viewer2D"
+                "Given notebook does not have call spots. Complete up to call spots before opening the Viewer2D"
             )
 
         self.commands = {
@@ -191,7 +191,7 @@ class Viewer2D:
 
         try:
             while True:
-                inp = input(f"Viewer2D command: ")
+                inp = input("Viewer2D command: ")
                 self._interpret_command(inp.strip())
                 print("")
         except KeyboardInterrupt:
@@ -226,7 +226,7 @@ class Viewer2D:
                 y = self.legend_gene_separation_vertical * (i // gene_count_width)
                 ax_legend.scatter(x, y, s=300, c=self.legend_gene_colours[[i]], marker=self.legend_symbols[i])
                 ax_legend.annotate(self.gene_names[self.legend_gene_no[i]], (x, y), size="small")
-                ax_legend.set_title(f"Gene legend")
+                ax_legend.set_title("Gene legend")
             self._delete_splines_for(ax_legend)
             self._delete_ticks_for(ax_legend)
         ax_genes: plt.Axes = axes[-1, -1]
@@ -289,7 +289,7 @@ class Viewer2D:
     def _interpret_command(self, command: str) -> None:
         """Handles user commands sent to the Viewer2D through the terminal."""
         if command == "":
-            print(f"No command given.")
+            print("No command given.")
             return
         keyword = command.split()[0].lower()
         if not self._keyword_exists(keyword):
@@ -357,7 +357,7 @@ class Viewer2D:
                 self._argument_invalid("method", args[0])
                 return
             elif method == self.Methods.omp and not self.omp_available:
-                print(f"omp method not available")
+                print("omp method not available")
                 return
             self.method_selected = method
         elif keyword in self.Keywords.SCORE_MIN:
@@ -410,7 +410,7 @@ class Viewer2D:
                 return
             self._toggle_gene_colour(gene_no)
         else:
-            raise LookupError(f"Should not reach here")
+            raise LookupError("Should not reach here")
         self._close()
         self._draw()
         if self.view_plot:
@@ -481,5 +481,5 @@ class Viewer2D:
 
     def _exit(self) -> None:
         plt.style.use("default")
-        print(f"Exiting Viewer2D")
+        print("Exiting Viewer2D")
         sys.exit()

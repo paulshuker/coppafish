@@ -1,10 +1,10 @@
 import itertools
 from typing import Optional
 
-from dash import Dash, dcc, html, Input, Output
 import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
+from dash import Dash, Input, Output, dcc, html
 
 from ..find_spots import detect
 from ..setup.notebook import Notebook
@@ -85,7 +85,7 @@ def view_find_spots(nb: Notebook, debug: bool = False) -> None:
                     style={"width": "30px", "padding": "0 5px"},
                 ),
                 html.H1(
-                    f"Find Spots",
+                    "Find Spots",
                     id="title",
                     style={
                         "textAlign": "center",
@@ -337,5 +337,5 @@ def n_spots_grid(nb: Notebook, n_spots_thresh: Optional[int] = None):
             (low_spots[1][j] - 0.5, low_spots[0][j] - 0.5), 1, 1, fill=False, ec="r", linestyle=":", lw=2
         )
         ax.add_patch(rectangle)
-    plt.suptitle(f"Number of Spots Found on each Tile, Round and Channel")
+    plt.suptitle("Number of Spots Found on each Tile, Round and Channel")
     plt.show()

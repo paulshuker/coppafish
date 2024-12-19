@@ -29,7 +29,7 @@ To choose the set of functions we will use to fit to our data, we need to look f
 - The multiple camera setup, meaning channels belonging to different cameras are often slightly shifted or rotated with respect to one another.
 
 - [Chromatic aberration](https://en.wikipedia.org/wiki/Chromatic_aberration), the variable frequency-dependent dispersal of light through the lens. This expands the images from different channels by different amounts. See the figure below.
- 
+
 
 So the channel-to-channel differences are composed of shifts, rotations and scalings. We model each channel transform by an [affine transform](https://en.wikipedia.org/wiki/Affine_transformation) $A_c$.
 
@@ -48,11 +48,11 @@ For round to round differences, we see much less predictable variability. Misali
 - Variable local shifts due to the microfluidics system,
 
 - Variable local shifts due to gravity or tissue deformation. These shifts have the potential to affect regions very differently. For example, the [pyramidal layer](https://en.wikipedia.org/wiki/Pyramidal_cell) is very densely packed and seems to sink more than surrounding areas, leading to different z-shifts in its vicinity. We have also observed rips within tissue samples, which cause different sides of the tissue to move in apart from each other in opposite directions.
- 
+
 The conclusion is that affine transformations **do not** sufficiently capture the richness of round-to-round transformations. We therefore allow for completely arbitrary transformations $\mathcal{F}_r$ for each round $r$.
 
 ??? example "Affine Transform Failure Example"
-    
+
     The figure below shows a rip in the tissue and the resulting misalignment in the DAPI channel. This is just one example of a misalignment that cannot be captured by an affine transform.
     <p align="center">
       <img src="https://github.com/user-attachments/assets/92066d55-eeca-4783-ab34-2f853c3aedae" width="600" />
@@ -61,7 +61,7 @@ The conclusion is that affine transformations **do not** sufficiently capture th
     </p>
 
 
-To answer the second part of question 1 - empirically, it seems we don't need to find $n_{\textrm{rounds}} \times n_{\textrm{channels}}$ independent transforms per tile, we only need $n_{\textrm{rounds}} + n_{\textrm{channels}}$. Explicitly, we model every transform as 
+To answer the second part of question 1 - empirically, it seems we don't need to find $n_{\textrm{rounds}} \times n_{\textrm{channels}}$ independent transforms per tile, we only need $n_{\textrm{rounds}} + n_{\textrm{channels}}$. Explicitly, we model every transform as
 
 $$
  g_{rc}(\mathbf{x}) = A_{c}(\mathcal{F}_{r}(\mathbf{x})).
@@ -73,36 +73,36 @@ The round transforms are computed with [Optical Flow](https://en.wikipedia.org/w
 
 ??? note "Note on Affine Transforms"
 
-    When we compute the round transforms $\mathcal{F}_r$ these often include some systematic error, like a small shift of 1 pixel and slight underestimation of the z-expansion. This is due to 
-    
+    When we compute the round transforms $\mathcal{F}_r$ these often include some systematic error, like a small shift of 1 pixel and slight underestimation of the z-expansion. This is due to
+
        - downsampling of the images used to compute the optical flow transforms,
-    
+
        - A failure to find good shifts at z-boundaries, due to poor quality images in these planes.
 
-    To get around this, we find an affine correction $B_r$ for each round. This means our functions $g_{rc}$ can be written as 
-    
+    To get around this, we find an affine correction $B_r$ for each round. This means our functions $g_{rc}$ can be written as
+
     $$
     g_{rc}(\mathbf{x}) = A_{c}(B_{r}(\mathcal{F}_{r}(\mathbf{x})).
-    $$ 
-    
-    We combine the two affine transforms $A_c$ and $B_r$ to give us the simple formula 
+    $$
+
+    We combine the two affine transforms $A_c$ and $B_r$ to give us the simple formula
 
     $$
     g_{rc}(\mathbf{x}) = A_{rc}(\mathcal{F}_{r}(\mathbf{x})),
-    $$ 
+    $$
 
     which means that in practice our affine maps actually depend on round as well as channel.
 
 
 ## Optical Flow
-We use optical flow to align the anchor DAPI $D_{r_{\textrm{ref}}}(\mathbf{x})$  to the round $r$ DAPI $D_r(\mathbf{x})$. The output of this algorithm is a function $\mathcal{F}_r$ which satisfies the relation 
+We use optical flow to align the anchor DAPI $D_{r_{\textrm{ref}}}(\mathbf{x})$  to the round $r$ DAPI $D_r(\mathbf{x})$. The output of this algorithm is a function $\mathcal{F}_r$ which satisfies the relation
 
 $$
 D_{r_{\textrm{ref}}}(\mathcal{F}_r(\mathbf{x})) = D_r(\mathbf{x}).
 $$
 
 ### 1. How does it work?
-Suppose we have 2 images $I$ and $J$ which we'd like to register. This means for each position $\mathbf{x}$ in image $J$ we would like to find the shift $\mathbf{s}$ satisfying 
+Suppose we have 2 images $I$ and $J$ which we'd like to register. This means for each position $\mathbf{x}$ in image $J$ we would like to find the shift $\mathbf{s}$ satisfying
 
 $$
 I(\mathbf{x} + \mathbf{s}) = J(\mathbf{x}).
@@ -114,16 +114,16 @@ $$
 \mathbf{s} \cdot \boldsymbol{\nabla} I(\mathbf{x}) \approx J(\mathbf{x}) -  I(\mathbf{x}),
 $$
 
-which is called the flow equation, an under-determined equation due to the fact that there are 3 unknowns - each component of $\mathbf{s}$. 
+which is called the flow equation, an under-determined equation due to the fact that there are 3 unknowns - each component of $\mathbf{s}$.
 
-There are many different methods that exist to tackle this. The one we use is called the [Lucas-Kanade](https://en.wikipedia.org/wiki/Lucas%E2%80%93Kanade_method) method, which assumes that all pixels in a small window of radius $r$ (the `window_radius` parameter with default value 8) around the point $\mathbf{x}$ have the same shift $\mathbf{s}$. 
+There are many different methods that exist to tackle this. The one we use is called the [Lucas-Kanade](https://en.wikipedia.org/wiki/Lucas%E2%80%93Kanade_method) method, which assumes that all pixels in a small window of radius $r$ (the `window_radius` parameter with default value 8) around the point $\mathbf{x}$ have the same shift $\mathbf{s}$.
 
 Since this method assumes that all pixels have the same shift within this window, the condition that $I$ is smooth is very important, as we need to ensure that the same flow equation holds for all $x$ in the window. For this to be true, the Hessian $\frac{\partial ^2 I}{\partial \mathbf{x}^2}$ cannot be too large in this window.
 
 Lucas-Kanade works as follows. Let $\mathbf{x}_1, \cdots, \mathbf{x}_n$ be all the points in this window. Then assuming these all have the same shift $\mathbf{s}$, we can gather the $n$ flow equations
 
 $$
-\begin{pmatrix} \boldsymbol{\nabla} I(\mathbf{x}_1)^T \\ \vdots \\ \boldsymbol{\nabla} I(\mathbf{x}_n)^T  \end{pmatrix} \mathbf{s} = \begin{pmatrix} J(\mathbf{x}_1) - I(\mathbf{x}_1) \\ \vdots \\ J(\mathbf{x}_n) - I(\mathbf{x}_n)  \end{pmatrix}, 
+\begin{pmatrix} \boldsymbol{\nabla} I(\mathbf{x}_1)^T \\ \vdots \\ \boldsymbol{\nabla} I(\mathbf{x}_n)^T  \end{pmatrix} \mathbf{s} = \begin{pmatrix} J(\mathbf{x}_1) - I(\mathbf{x}_1) \\ \vdots \\ J(\mathbf{x}_n) - I(\mathbf{x}_n)  \end{pmatrix},
 $$
 
 which is now overdetermined! This is a better problem to have though, as the solution can be approximated by least squares.
@@ -154,7 +154,7 @@ To make sure we meet the assumptions we carry out the following steps:
 
 
 ??? example "Smoothing Example"
-   
+
     The figures below shows the effect of downsampling and blurring on the images. The Hessian determinants are shown on the right of the images.
 
     === "Nearest Neighbour Downsampling"
@@ -189,7 +189,7 @@ Speed is an issue with this algorithm, because it needs to be run independently 
 2. We split the downsampled images into 16 subvolumes (4 in $y$ and 4 in $x$), and run optical flow in parallel on all of these independent subvolumes. The number of cores used can be adjusted by changing the `flow_cores` parameter though if left blank this will be computed automatically.
 
 #### Interpolation
-As mentioned previously, the algorithm assumes that the images have the same intensities. This condition is certainly satisfied near cell nuclei, where similar features exist in both images. Far from nuclei though, where all we have is noise, 
+As mentioned previously, the algorithm assumes that the images have the same intensities. This condition is certainly satisfied near cell nuclei, where similar features exist in both images. Far from nuclei though, where all we have is noise,
 the 2 images have completely independent intensities. The result of this is that our flow fields tend to only give reliable results near nuclei, as shown below.
 
 <p align="center">
@@ -198,7 +198,7 @@ the 2 images have completely independent intensities. The result of this is that
   <span> The shifts found by optical flow are only reliable in a small window around cell nuclei.</span>
 </p>
 
-This is problematic, as a lot of our reads are found in between cell nuclei! We need to interpolate the values in these regions. 
+This is problematic, as a lot of our reads are found in between cell nuclei! We need to interpolate the values in these regions.
 
 ##### Hard Threshold Interpolation
 
@@ -206,7 +206,7 @@ Suppose we have a flow field $\mathcal{F}$ that we would like to interpolate. We
 
 1. Choose some locations $\mathbf{x}_1, \cdots, \mathbf{x}_n$ where we know the shifts computed $\mathbf{s}_1, \cdots, \mathbf{s}_n$ are reliable,
 
-2. Define the interpolated flow to be of the form 
+2. Define the interpolated flow to be of the form
 
 $$
 \mathcal{F}_{\textrm{interp}}(\mathbf{x}) = \sum_i w(\mathbf{x}, \mathbf{x}_i) \mathbf{s}_i ,
@@ -220,7 +220,7 @@ where the sum is over all sample points $\mathbf{x}_1, \cdots, \mathbf{x}_n$, an
 
 If these 2 properties are met then $\mathcal{F}_{\textrm{interp}}$ will be a weighted average of all the shifts $\mathbf{s}_i$, and since the weights are decreasing, the value of the $\mathcal{F}_{\textrm{interp}}$ at each interpolation point $\mathbf{x}_i$ will be strongly weighted toward $\mathbf{s}_i$.
 
-Do such weight functions exist? Can we construct them? Yes and yes! Define the function 
+Do such weight functions exist? Can we construct them? Yes and yes! Define the function
 
 $$
 K(\mathbf{x}, \mathbf{y}) = \exp \Bigg( -\frac{1}{2 \sigma^2} ||\mathbf{x} - \mathbf{y}||^2 \Bigg),
@@ -228,24 +228,24 @@ $$
 
 then we can define the weights by
 
-$$ 
+$$
 w(\mathbf{x}, \mathbf{x}_i) = \dfrac{K(\mathbf{x}, \mathbf{x}_i)}{\sum_j K(\mathbf{x}, \mathbf{x}_j)}.
 $$
 
 It is easy to see that this satisfies both the desired properties for the weights.
 
 ??? tip "How to choose $\sigma$?"
-    
-    In the limits: 
 
-    - as $\sigma \to 0$ this tends to nearest neighbour interpolation, 
+    In the limits:
+
+    - as $\sigma \to 0$ this tends to nearest neighbour interpolation,
 
     - as $\sigma \to \infty$ the image takes the same value everywhere, the mean of the flow image at the sample points.
 
     Another way of saying this is that as $\sigma$ grows, so does the radius of contributing pixels.
 
     We expect the shifts to vary more quickly in $z$ than in $xy$, so we have a different parameter for the blurring in each direction: `smooth_sigma`. This takes default values `[10, 10, 5]` ($y$, $x$ and $z$).
- 
+
 
 ##### Extension to Soft Threshold Interpolation
 The above method works well, but having a hard threshold means that some points $\mathbf{x}_1, \cdots, \mathbf{x}_n$ are used while others are completely ignored. This can lead to undersampling. A better approach is to employ a soft threshold, where we use all points $\mathbf{x}_i$ in the flow image but weight their contributions by the quality of the match at $\mathbf{x}_i$, which we will call $\lambda(\mathbf{x}_i)$.
@@ -258,18 +258,18 @@ $$
 
 where the sum now ranges over all points in the image, and the weight functions are given by
 
-$$ 
+$$
 w(\mathbf{x}, \mathbf{x}_i) = \dfrac{K(\mathbf{x}, \mathbf{x}_i)}{\sum_j \lambda(\mathbf{x}_j) K(\mathbf{x}, \mathbf{x}_j)}.
 $$
 
 ??? note "Definition of the Score $\lambda$"
 
-    Define the auxilliary score 
+    Define the auxilliary score
 
-    $$ 
+    $$
     \eta(\mathbf{x}) = D_{r_{\textrm{ref}}}(\mathcal{F}_r(\mathbf{x}))D_r(\mathbf{x}).
     $$
-    
+
     Then our score $\lambda$ is defined as
 
     $$
@@ -279,14 +279,14 @@ $$
     where $\eta_0$ and $\eta_1$ are the 25th and 99th percentiles of $\eta$ respectively and $C_{a, b}$ is the [clamp function](https://en.wikipedia.org/wiki/Clamping_(graphics)).
 
     This results in a score of 0 for common low intensity background regions, and 1 for high quality regions like cell nuclei.
-   
-    
+
+
 
 #### Extrapolation in z
 The quality of the z-shifts drops rapidly towards the top end of the z-stack, because the optical flow uses windows of fixed radius (the `window_radius` parameter, which has default value 8). When these windows go over the edge of the image, the shifts get biased towards 0. This problem is made worse when the initial shift found is large in $z$, as then the adjusted image is padded with many zeros.
 
 We get around this problem by linearly predicting the z-shifts from the bottom and middle of the image and replacing all z-shifts with these linear estimates. This is illustratedc in the figure below.
-      
+
 <p align="center">
 <img src="https://github.com/user-attachments/assets/54d294f1-241c-4ea0-9f66-f700544fbd38" width="600" />
 <br />
@@ -304,7 +304,7 @@ We now attempt to find the affine corrections to the flows found earlier. As men
 We have omitted the tile subscript, but keep in the back of your mind that these transforms vary between tiles.
 
 ### 1. How does it work
-Optical flow took in 2 **images** ($I$ and $J$ ) as inputs and returned 3 images of the same size as outputs (the flow in each direction $y$, $x$ and $z$). ICP differs in that it takes in 2 **point-clouds** as input and returns an affine transform $A$ as output. 
+Optical flow took in 2 **images** ($I$ and $J$ ) as inputs and returned 3 images of the same size as outputs (the flow in each direction $y$, $x$ and $z$). ICP differs in that it takes in 2 **point-clouds** as input and returns an affine transform $A$ as output.
 
 Let $X = \begin{pmatrix} \mathbf{x}_1, \cdots,  \mathbf{x}_m \end{pmatrix}$ be the base point cloud and $Y = \begin{pmatrix} \mathbf{y}_1, \cdots,  \mathbf{y}_n \end{pmatrix}$  be the point cloud we are trying to match this to.
 
@@ -318,20 +318,20 @@ In our case $X$ is the set of anchor points and $Y$ is the set of points in a gi
 
 4. The same as 1. but we remove outliers where the shift $\mathbf{y}_i -  \mathbf{x}_{\beta(i)}$ seems to be very different from others in its vicinity.
 
-We use approach 3. The parameters config parameters `neighb_dist_thresh_yx` and `neighb_dist_thresh_z` refer to $r_{yx}$ and $r_z$ respectively. 
+We use approach 3. The parameters config parameters `neighb_dist_thresh_yx` and `neighb_dist_thresh_z` refer to $r_{yx}$ and $r_z$ respectively.
 
 ??? warning "Setting $r_z$ too low"
-    
+
     Currently we think that ICP is correcting $y$ and $x$ more than $z$, so we have $r_{z} < r_{xy}$. If this changes in the future (for example, if optical flow is not sufficiently capturing the variable z-shifts) then increasing $r_z$ will allow ICP to have greater impact on the $z$ transforms.
 
-Once we have a matching $\beta$, ICP works by finding an affine map $A$ minimising the loss function 
+Once we have a matching $\beta$, ICP works by finding an affine map $A$ minimising the loss function
 
 $$
 L(A) = \sum_{i} || A \mathbf{x}_{\beta(i)} - \mathbf{y}_i ||^2,
 $$
 
 (where the sum is over all those elements in $Y$ that have been assigned a match) and then iterate this process of matching then minimising until some stopping criteria are met. We have the 2 following stopping criteria:
- 
+
 1. If 2 consecutive matchings are identical $\beta_{t+1} = \beta_t$ then ICP gets stuck in an infinite loop, so we stop the iterations.
 
 2. The maximum number of iterations are reached. This is set by `icp_max_iter` which has default value 50.
@@ -355,7 +355,7 @@ for _ in range(n_iter):
     neighb = [argmin_k || X[k] - Y[j] || for j in range(n)]
 
     # Remove these matches if they are above the neighb_dist_thresh
-    neighb = [neighb [j] if || X[neighb[j]] - Y[j] || < epsilon, 
+    neighb = [neighb [j] if || X[neighb[j]] - Y[j] || < epsilon,
               else None for j in range(n)]
 
     # Terminate if no change in neighbours
@@ -366,7 +366,7 @@ for _ in range(n_iter):
     transform_update = argmin_B sum_j || X[neighb[j]] @ B - Y[j] || ** 2
     X = X @ transform_update
     transform = transform_update @ transform
-    
+
     # Update neighb_prev
     neighb_prev = neighb
 ```
@@ -375,7 +375,7 @@ for _ in range(n_iter):
 Let $X_{r, c}$ be the $n_{\textrm{spots}}(r,c) \times 3$ matrix of all the spots found on round $r$ channel $c$.
 
 ??? note "Min Spots Criterion"
-    
+
     ICP will not run on a tile, round, channel with too few spots. This threshold is set by `icp_min_spots` which has default value 100.
 
 #### Round Transform
@@ -427,7 +427,7 @@ This will open a viewer with the following home screen:
 
 This shows the round registration on the top row and the channel registration on the bottom row. This is displayed as follows:
 
-- Each image in the top row shows a small patch of $(r_{\textrm{ref}}, c_{\textrm{dapi}})$ in red, overlaid with $(r, c_{\textrm{dapi}})$ in green. 
+- Each image in the top row shows a small patch of $(r_{\textrm{ref}}, c_{\textrm{dapi}})$ in red, overlaid with $(r, c_{\textrm{dapi}})$ in green.
 
 - Each image in the bottom row shows a small patch of $(r_{\textrm{ref}}, c_{\textrm{ref}})$ in red, overlaid with $(r_{\textrm{mid}}, c)$ in green.
 
@@ -500,9 +500,9 @@ This shows 3 columns of images:
 
 1. **No Flow**: This shows $(r_{\textrm{ref}}, c_{\textrm{dapi}})$ in red, overlaid with $(r, c_{\textrm{dapi}})$ in green before optical flow has been applied.
 
-2. **Raw Flow**: This shows $(r_{\textrm{ref}}, c_{\textrm{dapi}})$ in red, overlaid with $(r, c_{\textrm{dapi}})$ in green after the raw flow has been applied. 
+2. **Raw Flow**: This shows $(r_{\textrm{ref}}, c_{\textrm{dapi}})$ in red, overlaid with $(r, c_{\textrm{dapi}})$ in green after the raw flow has been applied.
 
-3. **Smoothed Flow**: This shows $(r_{\textrm{ref}}, c_{\textrm{dapi}})$ in red, overlaid with $(r, c_{\textrm{dapi}})$ in green after the smoothed flow has been applied. 
+3. **Smoothed Flow**: This shows $(r_{\textrm{ref}}, c_{\textrm{dapi}})$ in red, overlaid with $(r, c_{\textrm{dapi}})$ in green after the smoothed flow has been applied.
 
 Rows 2, 3 and 4 show the raw and smooth flows in the $y$, $x$ and $z$ directions respectively, while row 5 shows the correlation between the raw flow and the target image (this is the score $\lambda(\mathbf{x})$ which is used to compute the smoothed flow).
 
@@ -527,9 +527,9 @@ Rows 2, 3 and 4 show the raw and smooth flows in the $y$, $x$ and $z$ directions
           <img src="https://github.com/user-attachments/assets/24e2351e-c309-4f18-b19f-618a9be40d05" width="800" />
          <br />
          </p>
-    
+
     The figure below is a closer look at the raw and smoothed flow fields, with the correlation plotted below them in blue.
-    
+
     <p align="center">
     <img src="https://github.com/user-attachments/assets/c89c143b-646a-481f-aa13-188143620bf7" width="600" />
     <br />
@@ -546,10 +546,10 @@ These show things like the average shift and scale for each round and channel an
 !!! example "Summary Statistics"
 
     The figure below shows the shifts and scales of the ICP correction for each round and channel of a particular tile. These numbers alone do not tell us the whole picture about the affine transforms (for example they don't tell us about the rotation), but they can be useful for identifying outliers, and seeing how much work ICP is doing.
-    
+
     In this image, very bright or very dark columns indicate large round corrections, while very bright or very dark rows indicate large channel corrections. Take note of the following points:
 
-    - The round corrections are largest in z. 
+    - The round corrections are largest in z.
     - The channel corrections are largest in x and y.
     - The channel scales and shifts are very similar in channels separated by a multiple of 4. This is because these channels come from the same camera, and therefore have roughly the same offset.
     - Even though these scales are very small (around 1.003 at most), the images have size around 2000 pixels. This means that if we didn't correct for these scales, the images would be off by around 6 pixels, which is a lot.
@@ -558,21 +558,21 @@ These show things like the average shift and scale for each round and channel an
     <img src="https://github.com/user-attachments/assets/e5447df4-77be-4d59-8bdf-43c21ffb4bf8" width="600" />
     <br />
     </p>
-    
+
 
 #### Point Clouds
 These show the point clouds used to compute the round corrections $B_r$ and channel corrections $A_c$. This is much more detailed than the summary statistics and can be used to understand why convergence fails in certain cases.
 
 !!! example "Point Clouds"
 
-    The figure below shows the point clouds used to compute the channel correction $A_c$ for $c = 5$. 
-    
+    The figure below shows the point clouds used to compute the channel correction $A_c$ for $c = 5$.
+
     - The white circles are the points from $(r_{\textrm{ref}}, c_{\textrm{ref}})$,
-    - the red crosses are the points from $(r_{\textrm{mid}}, c)$. 
+    - the red crosses are the points from $(r_{\textrm{mid}}, c)$.
     - The cyan lines show the matches between points in the unaligned point clouds,
-    - the blue lines show the matches between points in the aligned point clouds. 
+    - the blue lines show the matches between points in the aligned point clouds.
     - The yellow background image is bright in places where there are many matches and dark where there are few.
-    
+
     === "No Registration"
         <p align="center">
         <img src="https://github.com/user-attachments/assets/151d275b-062b-4bcc-bbc6-26fcb1ab90ff" width="600" />
@@ -586,7 +586,7 @@ These show the point clouds used to compute the round corrections $B_r$ and chan
         </p>
 
     The figure below shows the point clouds used to compute the round correction $B_r$ for $r = 1$. This viewer has the same components as the channel correction viewer but it defaults to showing all z-planes, as this is what ICP corrects for the most.
-    
+
     === "No Registration"
         <p align="center">
         <img src="https://github.com/user-attachments/assets/2df9bb7c-8967-4008-9cf9-12e957654752" width="600" />
@@ -601,8 +601,8 @@ These show the point clouds used to compute the round corrections $B_r$ and chan
 
 ## Registered Image Diagnostic
 
-The RegistrationViewer is great for diagnosing issues with the overall registration of images. But, if you want a 
-particular area of interest, you can view the final registered images for every round/channel in a specific region of 
+The RegistrationViewer is great for diagnosing issues with the overall registration of images. But, if you want a
+particular area of interest, you can view the final registered images for every round/channel in a specific region of
 a tile. To do this
 
 ```py
@@ -613,8 +613,8 @@ nb = Notebook("/path/to/notebook")
 view_registered_images(nb, tile)
 ```
 
-where tile is the tile's index. By default, a 400x400x5 subset is gathered with bottom-left corner at (0, 0, 0). But, 
-you can specify the region of interest by 
+where tile is the tile's index. By default, a 400x400x5 subset is gathered with bottom-left corner at (0, 0, 0). But,
+you can specify the region of interest by
 
 ```py
 from coppafish import Notebook
@@ -624,10 +624,9 @@ nb = Notebook("/path/to/notebook")
 view_registered_images(nb, tile, ((ymin, ymax), (xmin, xmax), (zmin, zmax)))
 ```
 
-where all minima and maxima must be integer numbers. The maxima are exclusive. As an example, 
-`#!py ((2, 16), (0, 10), (5, 16))` would gather a 14x10x11 subset. See the 
-[docstring](https://github.com/paulshuker/coppafish/blob/HEAD/coppafish/plot/register/registered_image.py) for further 
+where all minima and maxima must be integer numbers. The maxima are exclusive. As an example,
+`#!py ((2, 16), (0, 10), (5, 16))` would gather a 14x10x11 subset. See the
+[docstring](https://github.com/paulshuker/coppafish/blob/HEAD/coppafish/plot/register/registered_image.py) for further
 detail.
 
 Use the layer list on the left of the napari window to toggle the visibility of images.
-

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from coppafish.find_spots import get_isolated_spots
+from coppafish.find_spots.base import get_isolated_spots
 
 
 def test_get_isolated_spots() -> None:

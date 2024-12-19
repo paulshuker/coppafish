@@ -8,7 +8,6 @@ import argparse
 from coppafish import Notebook, Viewer, run_pipeline
 from coppafish.plot import view_find_spots
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run coppafish pipeline or diagnostics")
     parser.add_argument("filepath", type=str, help="Config file path (notebook file path if --view)")

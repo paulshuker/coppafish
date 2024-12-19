@@ -2,13 +2,11 @@ import enum
 import os
 from typing import Any, Optional, Tuple, Union
 
-from numcodecs import Blosc, blosc
 import numpy as np
-import numpy.typing as npt
 import zarr
+from numcodecs import Blosc, blosc
 
 from ..utils import system
-
 
 EXTRACT_IMAGE_DTYPE = np.uint16
 FILTER_IMAGE_DTYPE = np.float16
@@ -95,7 +93,7 @@ def image_exists(file_path: str) -> bool:
 
 
 def _save_image(
-    image: npt.NDArray[Union[np.float16, np.uint16]],
+    image: np.ndarray[Union[np.float16, np.uint16]],
     file_path: str,
     optimised_for: OptimisedFor = None,
 ) -> None:
@@ -131,7 +129,7 @@ def _save_image(
 
 def _load_image(file_path: str) -> zarr.Array:
     """
-    Read in extract zarr array from file_path location.
+    Read extract zarr Array from the given location.
 
     Args:
         file_path (str): image location.

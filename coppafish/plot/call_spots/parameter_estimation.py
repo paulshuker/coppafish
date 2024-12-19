@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+
 from ...setup.notebook import Notebook
 
 
@@ -394,8 +395,8 @@ def ViewTileScaleRegression(
             ax[r, c].set_ylabel("$K_{grc}$")
     plt.suptitle(
         "Each tile scale $Q_{trc}$ is chosen so that the loss function "
-        "$L(Q_{trc}) = \sum_{g \in G_{rc}} \sqrt{N_g}(D_{gtrc}Q_{trc} - K_{grc})^2$ is minimised, \n"
-        "where $G_{rc}$ is the set of genes with gene code $d_{max}(c)$ in round r, $K_{grc} = E_{grc}V_{rc}$ "
+        r"$L(Q_{trc}) = \sum_{g \in G_{rc}} \sqrt{N_g}(D_{gtrc}Q_{trc} - K_{grc})^2$ is minimised, "
+        "\n where $G_{rc}$ is the set of genes with gene code $d_{max}(c)$ in round r, $K_{grc} = E_{grc}V_{rc}$ "
         "is the constrained bled code for gene g, $D_g$ is the tile-dependent bled code for gene g, "
         "and $V_{rc}$ is the round/channel scale factor."
     )

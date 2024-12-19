@@ -1,4 +1,5 @@
 from os import path
+
 import pytest
 
 from coppafish import Notebook

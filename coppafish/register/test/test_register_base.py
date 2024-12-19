@@ -1,6 +1,6 @@
 import numpy as np
-from skimage.filters import gaussian
 from skimage import data
+from skimage.filters import gaussian
 
 from coppafish.register import base as reg_base
 from coppafish.register import preprocessing as reg_pre
@@ -26,8 +26,9 @@ def test_interpolate_flow():
     flow[2] = 3
     corr = np.ones((10, 10, 10))
     # interpolate (need to have 2 * window_radius < nz = 10)
-    flow_interp = reg_base.interpolate_flow(flow, correlation=corr, upsample_factor_yx=2, tile=0, round=0,
-                                            window_radius=2)
+    flow_interp = reg_base.interpolate_flow(
+        flow, correlation=corr, upsample_factor_yx=2, tile=0, round=0, window_radius=2
+    )
     # check that the shape is correct
     assert flow_interp.shape == (3, 20, 20, 10)
     # check that the values are correct

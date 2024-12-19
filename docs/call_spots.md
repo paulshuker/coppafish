@@ -489,7 +489,7 @@ Diagnosing the quality of the gene assignments is a crucial part of the pipeline
 
 ### View Scaling And BG Removal
 
-```pseudo
+```py
 from coppafish.plot.call_spots import ViewScalingAndBGRemoval
 ViewScalingAndBGRemoval(nb)
 ```
@@ -513,7 +513,7 @@ This plot shows us a few things:
 
 ### View Bleed Matrix
 
-```pseudo
+```py
 from coppafish.plot.call_spots import ViewBleedMatrix
 ViewBleedMatrix(nb)
 ```
@@ -536,7 +536,7 @@ This viewer shows 3 bleed matrices, each with columns (dyes) normalised.
 
 ### View Free And Constrained Bled Codes
 
-```pseudo
+```py
 from coppafish.plot.call_spots import ViewFreeAndConstrainedBledCodes
 ViewFreeAndConstrainedBledCodes(nb)
 ```
@@ -561,7 +561,7 @@ If this works as expected, the constrained bled codes should have values close t
 
 ### View Target Regression
 
-```pseudo
+```py
 from coppafish.plot.call_spots import ViewTargetRegression
 ViewTargetRegression(nb)
 ```
@@ -594,7 +594,7 @@ It is important to check how well each round and channel is being scaled to its 
 
 ### View Tile Scale Regression
 
-```pseudo
+```py
 from coppafish.plot.call_spots import ViewTileScaleRegression
 ViewTileScaleRegression(nb, t)
 ```
@@ -616,7 +616,7 @@ A couple of things to note:
 
 ### View Scale Factors
 
-```pseudo
+```py
 from coppafish.plot.call_spots import ViewScaleFactors
 ViewScaleFactors(nb)
 ```
@@ -635,12 +635,13 @@ What to expect:
 <p>
 
 ### Gene Efficiency Viewer
-```pseudo
-from coppafish.plot.call_spots import GeneEfficiencyViewer
-GeneEfficiencyViewer(nb, score_threshold=gamma, mode=gene_assignment_mode)
+
+```py
+from coppafish.plot.call_spots import ViewGeneEfficiencies
+ViewGeneEfficiencies(nb, score_threshold=gamma, mode=gene_assignment_mode)
 ```
 
-(or simply press 'E' in the main results' viewer)
+or press `e` in the Viewer.
 
 <p align="center">
 <img src="https://github.com/user-attachments/assets/6d8de8b7-e385-4d74-9324-035baf053031" width="600" />
@@ -656,7 +657,7 @@ Look out for:
 - Genes with very high or low gene efficiencies. This should not happen if `concentration_parameter_parallel` is sufficiently high, as it typically should need at least 10 spots to scale each dye. If the gene efficiencies are incorrect, OMP will struggle to find the correct gene assignments.
 
 ### Gene Spots Viewer
-```pseudo
+```py
 from coppafish.plot.call_spots import GeneSpotsViewer
 GeneSpotsViewer(nb, score_threshold=gamma, gene_index=g, mode=gene_assignment_mode)
 ```

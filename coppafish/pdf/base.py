@@ -1,14 +1,13 @@
 import os
 import textwrap
-from typing import Optional, Tuple, Union
 import webbrowser
+from typing import Optional, Tuple, Union
 
 import matplotlib as mpl
-from matplotlib import colors as mcolours
-from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
-from matplotlib.transforms import ScaledTranslation
 import numpy as np
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.transforms import ScaledTranslation
 from tqdm import tqdm
 from typing_extensions import Self
 
@@ -54,10 +53,10 @@ class BuildPDF:
             - auto_open (bool, optional): automatically open the output directory after creation. Default: false.
         """
         log.debug("Creating diagnostic PDF started")
-        pbar = tqdm(desc="Creating Diagnostic PDFs", total=11, unit="section")
+        pbar = tqdm(desc="Creating Diagnostic PDFs", total=10, unit="section")
         pbar.set_postfix_str("Loading notebook")
         if type(nb) is str:
-            nb = Notebook(nb, must_exist=True)
+            nb = Notebook(nb)
         pbar.update()
         if output_dir is None:
             output_dir = nbp_file.output_dir
@@ -86,7 +85,7 @@ class BuildPDF:
         if not os.path.isfile(os.path.join(output_dir, "_basic_info.pdf") and nb.has_page("basic_info")):
             with PdfPages(os.path.join(output_dir, "_basic_info.pdf")) as pdf:
                 mpl.rcParams.update(mpl.rcParamsDefault)
-                # Build a pdf with data from scale, extract, filter, find_spots, register, stitch, OMP
+                # Build a pdf with data from scale, extract, filter, find_spots, register, OMP
                 pbar.set_postfix_str("basic info")
                 text_intro_info = self.get_basic_info(nb.basic_info, nbp_file)
                 fig, axes = self.create_empty_page(1, 1)
@@ -189,9 +188,9 @@ class BuildPDF:
                             X[r, channels_to_index[c]] = nb.find_spots.spot_no[t, r, c]
                             ticks_channels_labels[channels_to_index[c]] = f"{c}"
                             if nb.basic_info.dapi_channel is not None and c == nb.basic_info.dapi_channel:
-                                ticks_channels_labels[channels_to_index[c]] = f"dapi"
+                                ticks_channels_labels[channels_to_index[c]] = "dapi"
                             if nb.basic_info.anchor_channel is not None and c == nb.basic_info.anchor_channel:
-                                ticks_channels_labels[channels_to_index[c]] = f"anchor"
+                                ticks_channels_labels[channels_to_index[c]] = "anchor"
                             ticks_rounds_labels[r] = f"{r if r != nb.basic_info.anchor_round else 'anchor'}"
                     im = ax.imshow(X, cmap="viridis", norm="log", vmin=minimum_spot_count, vmax=maximum_spot_count)
                     ax.set_xlabel("Channels")
@@ -240,92 +239,6 @@ class BuildPDF:
         pbar.set_postfix_str("register")
         pbar.update()
 
-        pbar.set_postfix_str("stitch")
-        stitch_filepath = os.path.join(output_dir, "_stitch.pdf")
-        if nb.has_page("stitch") and not os.path.isfile(stitch_filepath):
-            with PdfPages(stitch_filepath) as pdf:
-                # Plot the neighbouring tile scores.
-                tile_scores = nb.stitch.scores
-                n_tiles = tile_scores.shape[0]
-                max_neighbours = (~np.isclose(nb.stitch.scores, 0)).sum(1).max()
-                n_bars = n_tiles * max_neighbours
-                bar_scores_x = [i + 1 for i in range(n_bars)]
-                bar_scores = [0 for _ in range(n_bars)]
-                bar_scores_colours = ["black" for _ in range(n_bars)]
-                if max_neighbours > 0:
-                    rng = np.random.default_rng(0)
-                    for tile in range(n_tiles):
-                        tile_colour = rng.choice(list(mcolours.CSS4_COLORS.values()), replace=False)
-                        tile_nonzero_scores = tile_scores[tile, ~np.isclose(tile_scores[tile], 0)]
-                        tile_nonzero_scores = np.append(
-                            tile_nonzero_scores, np.full(max_neighbours - tile_nonzero_scores.size, np.nan)
-                        )
-                        for i in range(max_neighbours):
-                            bar_scores[tile * max_neighbours + i] = tile_nonzero_scores[i]
-                            bar_scores_colours[tile * max_neighbours + i] = tile_colour
-                fig, axes = self.create_empty_page(1, 1, hide_frames=False)
-                fig.suptitle("Stitch tile shift scores")
-                ax: plt.Axes = axes[0, 0]
-                ax.bar(bar_scores_x, bar_scores, width=0.9, color=bar_scores_colours, linewidth=0.5, edgecolor="black")
-                ax.spines["top"].set_visible(False)
-                ax.spines["right"].set_visible(False)
-                ax.set_xticks([])
-                ax.set_ylabel("Shift score")
-                fig.tight_layout()
-                pdf.savefig(fig)
-                plt.close(fig)
-
-                # Plot the neighbouring tile shifts for every tile.
-                all_tile_scores = nb.stitch.scores
-                all_tile_shifts = nb.stitch.shifts
-                zero_shifts = np.isclose(all_tile_scores, 0)
-                max_neighbours = (~zero_shifts).sum(1).max()
-                n_bars = 3 * max_neighbours * n_tiles
-                bar_x = [i for i in range(n_bars)]
-                bar_heights = [i for i in range(n_bars)]
-                bar_colours = ["black" for _ in range(n_bars)]
-                bar_labels = ["" for _ in range(n_bars)]
-                if max_neighbours > 0:
-                    for tile in range(n_tiles):
-                        tile_shifts = all_tile_shifts[tile]
-                        # Remove zero shifts.
-                        tile_shifts = tile_shifts[~zero_shifts[tile]]
-                        # Add zeros back in to reach shape[0] of max_neighbours for consistency.
-                        tile_shifts = np.append(tile_shifts, np.zeros((max_neighbours - tile_shifts.shape[0], 3)), 0)
-                        rng = np.random.default_rng(0)
-                        tile_colour = rng.choice(list(mcolours.CSS4_COLORS.values()), replace=False)
-                        for i in range(max_neighbours):
-                            bar_heights[3 * tile * max_neighbours + i + 0] = tile_shifts[i, 0]
-                            bar_heights[3 * tile * max_neighbours + i + 1] = tile_shifts[i, 1]
-                            bar_heights[3 * tile * max_neighbours + i + 2] = tile_shifts[i, 2]
-                            bar_colours[3 * tile * max_neighbours + i + 0] = tile_colour
-                            bar_colours[3 * tile * max_neighbours + i + 1] = tile_colour
-                            bar_colours[3 * tile * max_neighbours + i + 2] = tile_colour
-                            bar_labels[3 * tile * max_neighbours + i + 0] = f"Tile {tile}"
-                    fig, axes = self.create_empty_page(1, 1, hide_frames=False)
-                    fig.suptitle("Stitch tile shifts")
-                    ax: plt.Axes = axes[0, 0]
-                    ax.bar(bar_x, bar_heights, width=0.7, edgecolor="black", linewidth=0.5)
-                    ax.set_xticks([])
-                    ax.set_ylabel("Shift (pixels)")
-                    fig.tight_layout()
-                    pdf.savefig(fig)
-                    plt.close(fig)
-
-                dapi_image = nb.stitch.dapi_image[...]
-                for z in range(dapi_image.shape[0]):
-                    fig, axes = self.create_empty_page(1, 1)
-                    fig.suptitle(f"Fused dapi, {z=}")
-                    ax: plt.Axes = axes[0, 0]
-                    im = ax.imshow(dapi_image[z], interpolation="antialiased")
-                    ax.set_xticks([])
-                    ax.set_yticks([])
-                    fig.tight_layout()
-                    pdf.savefig(fig)
-                    plt.close(fig)
-                del dapi_image
-        pbar.update()
-
         pbar.set_postfix_str("call spots")
         ref_spots_filepath = os.path.join(output_dir, "_call_spots.pdf")
         if not os.path.isfile(ref_spots_filepath) and nb.has_page("ref_spots") and nb.has_page("call_spots"):
@@ -372,7 +285,7 @@ class BuildPDF:
                     axes[0, 0].set_yticks(range(n_rounds))
                     axes[0, 0].set_ylim([n_rounds - 0.5, -0.5])
                     axes[0, 0].set_ylabel("round")
-                    axes[0, 0].set_title(f"dye code match")
+                    axes[0, 0].set_title("dye code match")
                     self.empty_plot_ticks(axes[1, 0], show_bottom_frame=True, show_left_frame=True)
                     max_shown = g_probs[: self.N_GENES_SHOW].size
                     axes[1, 0].plot(np.arange(max_shown), g_probs[: self.N_GENES_SHOW])
@@ -506,8 +419,11 @@ class BuildPDF:
         size: Tuple[float, float] = A4_SIZE_INCHES,
         share_x: bool = False,
         share_y: bool = False,
-        gridspec_kw: dict = {},
+        gridspec_kw: dict = None,
     ) -> Tuple[plt.figure, np.ndarray]:
+        if gridspec_kw is None:
+            gridspec_kw = {}
+
         fig, axes = plt.subplots(
             nrows=nrows, ncols=ncols, squeeze=False, sharex=share_x, sharey=share_y, gridspec_kw=gridspec_kw
         )
@@ -564,14 +480,14 @@ class BuildPDF:
         try:
             output = f"Coppafish {basic_info_page.software_version} Diagnostics"
         except AttributeError:
-            output = f"Coppafish <0.5.0 Diagnostics"
+            output = "Coppafish <0.5.0 Diagnostics"
         output += "\n \n"
         use_tiles = basic_info_page.use_tiles
         output += "\n".join(textwrap.wrap(f"{len(use_tiles)} tiles: {use_tiles}", 88)) + "\n"
         output += (
             "...\n".join(
                 textwrap.wrap(
-                    f"3D tile dimensions: "
+                    "3D tile dimensions: "
                     + f"{basic_info_page.nz}x{basic_info_page.tile_sz}x{basic_info_page.tile_sz}",
                     85,
                 )
@@ -609,11 +525,8 @@ class BuildPDF:
         if filter_debug_page is not None:
             time_taken = self.get_time_taken_from_page(filter_debug_page)
             output += time_taken
-        if filter_debug_page.r_dapi is not None:
-            # Filtering DAPI is true
-            output += f"dapi filtering with r_dapi: {filter_debug_page.r_dapi}"
         else:
-            output += f"no dapi filtering"
+            output += "no dapi filtering"
         return output
 
     def create_pixel_value_hists(
@@ -700,19 +613,10 @@ class BuildPDF:
                         continue
                     ax.bar(x=hist_loc, height=hist_x, color="red", width=bin_size)
                     ax.set_xlim(pixel_min, pixel_max)
-                    if "filter" in section_name.lower():
-                        ax.vlines(
-                            nb.basic_info.tile_pixel_value_shift,
-                            0,
-                            greatest_possible_y,
-                            linestyles="solid",
-                            colors="black",
-                            linewidths=0.75,
-                        )
                     # Vertical line at the auto thresh value, i.e. the detecting spots threshold
                     if auto_thresh_values is not None:
                         ax.vlines(
-                            auto_thresh_values[t, r, c] + nb.basic_info.tile_pixel_value_shift,
+                            auto_thresh_values[t, r, c],
                             0,
                             greatest_possible_y,
                             linestyles="dotted",
@@ -790,10 +694,10 @@ class BuildPDF:
             label="Median score",
         )
         bar_colours = [cmap(norm(median_scores[i])) for i in range(median_scores.size)]
-        axes[0, 0].set_title(f"Counts")
+        axes[0, 0].set_title("Counts")
         axes[0, 0].bar(bar_x, spot_counts, width=1, color=bar_colours, edgecolor="black", linewidth=0.5)
         axes[0, 0].set_xticks(ticks, labels=labels)
-        axes[0, 0].set_ylabel(f"Spot count")
+        axes[0, 0].set_ylabel("Spot count")
         axes[0, 0].spines["left"].set_visible(True)
         axes[0, 0].spines["bottom"].set_visible(True)
 
@@ -801,7 +705,7 @@ class BuildPDF:
         all_scores = np.zeros(0, dtype=np.float16)
         for t in basic_info_page.use_tiles:
             all_scores = np.append(all_scores, omp_page.results[f"tile_{t}/scores"][:], 0)
-        axes[1, 0].set_title(f"Score distribution")
+        axes[1, 0].set_title("Score distribution")
         axes[1, 0].hist(all_scores, bins=200, color="red", edgecolor="black", linewidth=0.25)
         axes[1, 0].set_xlabel("Spot score")
         axes[1, 0].set_xlim(
@@ -841,7 +745,7 @@ class BuildPDF:
             max_z = mean_spot_shape.shape[2] - 1
             for column, z_offset in enumerate(z_offsets):
                 z = min([max([0, z_offset + mid_z]), max_z])
-                title = f"central z"
+                title = "central z"
                 if z_offset != 0:
                     title += f" {'+ ' if z_offset > 0 else '- '}{int(np.abs(z_offset))}"
                 else:
@@ -897,7 +801,7 @@ class BuildPDF:
         if score_threshold > 0:
             ax.set_title(r"Gene counts for scores $\geq$ " + str(round(score_threshold, 3)))
         else:
-            ax.set_title(f"Gene counts")
+            ax.set_title("Gene counts")
         # Create a colour map for the bars to be coloured based on the median scores
         cmap = mpl.cm.viridis
         norm = mpl.colors.Normalize(vmin=0, vmax=1)

@@ -1,5 +1,5 @@
 import itertools
-from typing import Tuple, Optional, Union, List, Any
+from typing import Any, List, Optional, Tuple
 
 from ..setup.notebook_page import NotebookPage
 
@@ -15,7 +15,7 @@ def create(
     include_dapi_seq: bool = False,
     include_dapi_anchor: bool = False,
     include_bad_trc: bool = True,
-) -> Union[List[Tuple[int, int, int]], List[Tuple[int, int]], List[Tuple[int]]]:
+) -> List[Tuple[int, int, int]] | List[Tuple[int, int]] | List[Tuple[int]]:
     """
     Create tile, round and/or channel indices to loops through. Used throughout the coppafish pipeline. The defaults
     are set to return only sequencing rounds and channels. If something is set to be included which does not exist in
@@ -82,7 +82,7 @@ def create(
         if include_channels:
             new_index += (c,)
         output.append(new_index)
-    # Remove any duplicate indices
+    # Remove any duplicate indices.
     output = sorted(list(set(output)))
     if not include_bad_trc:
         bad_trc = [tuple(trc) for trc in nbp_basic.bad_trc]
