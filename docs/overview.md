@@ -8,10 +8,10 @@ full detail on each pipeline section, click on a stage on the left panel.
 
 All raw data is re-saved at the `tile_dir` in the `file_names` config section. Coppafish does this to:
 
-* compress data.
-* remove unused tiles, rounds, and channels that may be in the given raw files.
-* save the raw data in a consistent format.
-* allow for faster data reading by using [zarr](https://zarr.readthedocs.io/) arrays.
+* Compress data.
+* Remove unused tiles, rounds, and channels that may be in the given raw files.
+* Save the raw data in a consistent format.
+* Allow for faster data reading by using [zarr](https://zarr.readthedocs.io/) arrays.
 
 Extract also saves metadata inside of the `tile_dir` directory if the raw files are ND2 format.
 
@@ -20,6 +20,10 @@ Extract also saves metadata inside of the `tile_dir` directory if the raw files 
 Extract images are then filtered to minimise scattering of light/de-blur (bright points will appear as cones initially,
 hence the name "Point Spread Function") and emphasise spots. A given point spread function is used to Wiener deconvolve
 the images.
+
+The point spread function is given as a .npz file under the `file_names` config section. The default is at
+`coppafish/setup/default_psf.npz`. Filtering is also affected by config parameters `wiener_constant` and
+`wiener_pad_shape` inside the `filter` config section.
 
 After filtering is applied, the images are saved to the notebook as `float16` compressed zarr arrays.
 
@@ -65,14 +69,15 @@ Orthogonal Matching Pursuit (OMP) is the most sophisticated gene calling method 
 overlapping genes to be detected. It is an iterative,
 <a href="https://en.wikipedia.org/wiki/Greedy_algorithm" target="_blank">greedy algorithm</a> that runs on individual
 pixels of the images. At each OMP iteration, a new gene is assigned to the pixel. OMP is also self-correcting.
-"Orthogonal" refers to how OMP will re-compute its gene contributions (their coefficients) after every iteration by
-least squares. Background genes[^1] are considered valid genes in OMP. The iterations stop if:
+"Orthogonal" refers to how OMP will re-compute every gene contribution (their pixel score) after each iteration by least
+squares. Background genes[^1] are considered valid genes in OMP. The iterations stop if:
 
 * iteration number `max_genes` in the `omp` config section is reached.
 * assigning the next best gene to the pixel does not have a score above `dot_product_threshold` in the `omp` config.
 * the next best gene is a background gene or already assigned to the pixel.
+* its residual colour is too dim.
 
-Every coefficient pixel is scored by convolving the coefficient pixel image with the mean spot. The mean spot is
-specified by `mean_spot_filepath` as a .npy file. If it is not specified, a default mean spot is used, shown
-[here](omp.md#3-pixel-scoring-and-spot-detection). This gives every gene a score image for every pixel. The final OMP
-spots are then taken as local maxima on the pixel score image greater than `score_threshold`.
+Pixel spot scores are computed by a convolution of the pixel score image with a mean spot. The mean spot is specified by
+the .npy file at `omp_mean_spot` in `file_names` config section. If it is not specified, a default mean spot is used,
+shown [here](omp.md#4-spot-scoring-and-spot-detection). This gives every gene a score image for every pixel. The final
+OMP spots are then taken as local maxima on the pixel score image greater than `score_threshold`.

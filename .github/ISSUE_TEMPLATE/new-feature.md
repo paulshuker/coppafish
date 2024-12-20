@@ -7,7 +7,7 @@ assignees: ''
 ---
 
 ### Idea:
-- 
+-
 
 ### Usage example:
-- 
+-

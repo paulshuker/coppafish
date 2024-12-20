@@ -3,15 +3,17 @@ import tempfile
 
 import matplotlib
 import numpy as np
+import pytest
 import tifffile
 import zarr
 
-from coppafish.plot.results_viewer.base_new import Viewer
+from coppafish.plot.results_viewer.base import Viewer
 from coppafish.setup.notebook_page import NotebookPage
 
 
+@pytest.mark.integration
 def test_Viewer() -> None:
-    # Using a headless backend to support headless unit testings of the Viewer..
+    # Using a headless backend to support headless unit testing the Viewer.
     matplotlib.use("Agg")
 
     rng = np.random.RandomState(0)
@@ -140,11 +142,11 @@ def test_Viewer() -> None:
     n_omp_spots = 85 // n_tiles
     omp_config = {
         "omp": {
-            "minimum_intensity": 0.001,
+            "minimum_intensity_multiplier": 0.001,
             "max_genes": 2,
             "dot_product_threshold": 0.01,
-            "dot_product_weight": 0.4,
-            "coefficient_normalisation_shift": 0.001,
+            "alpha": 0.0,
+            "beta": 1.0,
         }
     }
     nbp_omp = NotebookPage("omp", omp_config)
@@ -156,6 +158,7 @@ def test_Viewer() -> None:
     group = zarr.group(store=temp_zgroup.name, zarr_version=2)
     for t in use_tiles:
         subgroup = group.create_group(f"tile_{t}")
+        subgroup.attrs["minimum_intensity"] = 0.02
         subgroup.create_dataset("local_yxz", shape=(n_omp_spots, 3), dtype=np.int16)
         subgroup.create_dataset("scores", shape=(n_omp_spots), dtype=np.float16)
         subgroup.create_dataset("gene_no", shape=(n_omp_spots), dtype=np.int16)
@@ -193,7 +196,7 @@ def test_Viewer() -> None:
         # Check clicking the gene legend.
         for _ in range(10):
             event = type("Event", (object,), {})()
-            event.inaxes = viewer.legend.canvas.axes
+            event.inaxes = viewer.legend_.canvas.axes
             event.xdata = rng.rand()
             event.ydata = rng.rand()
             button = type("Button", (object,), {})()

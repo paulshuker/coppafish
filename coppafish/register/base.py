@@ -2,14 +2,14 @@ import time
 from typing import Optional, Tuple
 
 import joblib
-from joblib.externals import loky
 import nd2
 import numpy as np
 import scipy
-from scipy.ndimage import gaussian_filter
 import skimage
-from tqdm import tqdm
 import zarr
+from joblib.externals import loky
+from scipy.ndimage import gaussian_filter
+from tqdm import tqdm
 
 from .. import log, utils
 from ..register import preprocessing
@@ -27,8 +27,8 @@ def optical_flow_register(
     chunks_yx: int = 4,
     overlap: float = 1 / 3,
     window_radius: int = 5,
-    smooth_sigma: list = [10, 10, 2],
-    clip_val: np.ndarray = np.array([40, 40, 15]),
+    smooth_sigma: list | None = None,
+    clip_val: np.ndarray | None = None,
     n_cores: Optional[int] = None,
 ):
     """
@@ -41,27 +41,35 @@ def optical_flow_register(
     as a dot product between the base and target images within a small window of each pixel.
 
     Args:
-        target: np.ndarray size [n_y, n_x, n_z] of the target image (this will be the round image)
-        base: np.ndarray size [n_y, n_x, n_z] of the base image (this will be the anchor image)
-        tile: int specifying the tile index
-        round: int specifying the round index
-        raw_loc: str specifying the location to save/ load the optical flow
-        corr_loc: str specifying the location to save/ load the correlation
-        smooth_loc: str specifying the location to save/ load the smoothed flow
-        sample_factor_yx: int specifying how much to downsample the images in y and x before computing the optical flow
-        chunks_yx: int specifying the number of subvolumes to split the downsampled images into in y and x
-        overlap: float specifying the overlap between subvolumes
-        window_radius: int specifying the window radius for the optical flow algorithm and correlation calculation
-        (Note that this is the radius on the downsampled image, so a radius of 5 with a downsample factor of 4 will
-        correspond to a radius of 20 on the original image)
-        smooth_sigma: float specifying the standard deviation of the Gaussian filter to be used for smoothing the flow
-        clip_val: np.ndarray size [3] of the clip value for the optical flow in y, x and z
+        target (np.ndarray size [n_y, n_x, n_z]): the target image (this will be the round image)
+        base (np.ndarray size [n_y, n_x, n_z]): the base image (this will be the anchor image)
+        tile (int): specifying the tile index
+        round (int): specifying the round index
+        raw_loc (str): specifying the location to save/ load the optical flow
+        corr_loc (str): specifying the location to save/ load the correlation
+        smooth_loc (str): specifying the location to save/ load the smoothed flow
+        sample_factor_yx (int, optional): specifying how much to downsample the images in y and x before computing the optical flow
+        chunks_yx (int, optional): specifying the number of subvolumes to split the downsampled images into in y and x.
+            Default: 4
+        overlap (float, optional): specifying the overlap between subvolumes. Default: 1 / 3.
+        window_radius (int, optional): specifying the window radius for the optical flow algorithm and correlation calculation
+            (Note that this is the radius on the downsampled image, so a radius of 5 with a downsample factor of 4 will
+             correspond to a radius of 20 on the original image). Default: 5
+        smooth_sigma (list of numbers, optional): specifying the standard deviation of the Gaussian filter to be used
+            for smoothing the flow
+        clip_val (np.ndarray size [3], optional): the clip value for the optical flow in y, x and z. Default: ndarray
+            containing values [40, 40, 15].
         n_cores (int, optional): maximum cpu cores to use in parallel when computing optical flow. Default: all found
             cpu cores.
 
     Returns:
         Tuple containing path to optical flow, correlation, and smoothed flow zarr arrays respectively.
     """
+    if smooth_sigma is None:
+        smooth_sigma = [10, 10, 2]
+    if clip_val is None:
+        clip_val: np.ndarray = np.array([40, 40, 15])
+
     # convert the images to float32
     target = target.astype(np.float32)
     base = base.astype(np.float32)
@@ -115,7 +123,7 @@ def optical_flow_single(
     tile: int,
     round: int,
     window_radius: int = 5,
-    clip_val: np.ndarray = np.array([10, 10, 15]),
+    clip_val: np.ndarray | None = None,
     upsample_factor_yx: int = 4,
     chunks_yx: int = 4,
     overlap: float = 1 / 3,
@@ -140,6 +148,9 @@ def optical_flow_single(
     Returns:
         flow: np.ndarray size [3, n_y, n_x, n_z] of the optical flow
     """
+    if clip_val is None:
+        clip_val = np.array([10, 10, 15])
+
     t_start = time.time()
     # start by ensuring images are float32
     base = base.astype(np.float32)
@@ -268,7 +279,7 @@ def interpolate_flow(
     correlation: np.ndarray,
     tile: int,
     round: int,
-    sigma: list = [10, 10, 5],
+    sigma: list | None = None,
     window_radius: int = 8,
     upsample_factor_yx: int = 4,
     loc: str = "",
@@ -287,11 +298,15 @@ def interpolate_flow(
         correlation: n_y x n_x x n_z array of correlation coefficients
         tile: int specifying the tile index
         round: int specifying the round index
-        sigma: standard deviation of the Gaussian filter to be used for smoothing the flow
+        sigma (list of numbers, optional): standard deviation of the Gaussian filter to be used for smoothing the flow.
+            Default: [10, 10, 5].
         window_radius: int specifying the window radius for the optical flow algorithm
         upsample_factor_yx: int specifying the upsample factor in y and x
         loc: str specifying the location to save/ load the interpolated flow
     """
+    if sigma is None:
+        sigma = [10, 10, 5]
+
     time_start = time.time()
     # smooth the correlation
     correlation_smooth = gaussian_filter(correlation, sigma, truncate=6)
@@ -379,7 +394,7 @@ def upsample_yx(im: np.ndarray, factor: float = 4, order: int = 1) -> np.ndarray
 
 
 def channel_registration(
-    fluorescent_bead_path: str = None, anchor_cam_idx: int = 3, n_cams: int = 4, bead_radii: list = [10, 11, 12]
+    fluorescent_bead_path: str = None, anchor_cam_idx: int = 3, n_cams: int = 4, bead_radii: list | None = None
 ) -> np.ndarray:
     """
     Function to carry out channel registration using fluorescent beads. This function assumes that the fluorescent
@@ -390,16 +405,19 @@ def channel_registration(
     camera and the round_reg_channel_cam via ICP.
 
     Args:
-        fluorescent_bead_path: Path to fluorescent beads directory containing the fluorescent bead images.
-        If none then we assume that the channels are registered to each other and just set channel_transforms to
-        identity matrices
-        anchor_cam_idx: int index of the camera to use as the anchor camera
-        n_cams: int number of cameras
-        bead_radii: list of possible bead radii
+        fluorescent_bead_path (str): path to fluorescent beads directory containing the fluorescent bead images. If none
+            then we assume that the channels are registered to each other and just set channel_transforms to identity
+            matrices.
+        anchor_cam_idx (int): index of the camera to use as the anchor camera
+        n_cams (int): number of cameras
+        bead_radii (list of numbers, optional): possible bead radii. Default: [10, 11, 12].
 
     Returns:
         transform: n_cams x 3 x 4 array of affine transforms taking anchor camera to each other camera
     """
+    if bead_radii is None:
+        bead_radii = [10, 11, 12]
+
     transform = np.zeros((n_cams, 4, 3))
     # First check if the fluorescent beads path exists. If not, we assume that the channels are registered to each
     # other and just set channel_transforms to identity matrices

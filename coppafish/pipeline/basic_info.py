@@ -4,12 +4,14 @@ import os
 import numpy as np
 
 from .. import log
+from ..extract import nd2
+from ..setup import tile_details
+from ..setup.config import Config
 from ..setup.notebook_page import NotebookPage
 from ..utils import base as utils_base
-from ..extract import nd2
 
 
-def set_basic_info_new(config: dict) -> NotebookPage:
+def set_basic_info(config: Config) -> NotebookPage:
     """
     Adds info from `'basic_info'` section of config file to notebook page.
 
@@ -27,11 +29,11 @@ def set_basic_info_new(config: dict) -> NotebookPage:
     """
     # Break the page contents up into 2 types, contents that must be read in from the config and those that can
     # be computed from the metadata.
-    config_file: dict = config["file_names"]
-    config_basic: dict = config["basic_info"]
+    config_file = config["file_names"]
+    config_basic = config["basic_info"]
 
     # Initialize Notebook
-    associated_configs = {"basic_info": config_basic, "file_names": config_file}
+    associated_configs = {config_basic.name: config_basic.to_dict(), config_file.name: config_file.to_dict()}
     nbp = NotebookPage("basic_info", associated_configs)
 
     # Stage 1: Compute metadata. This is done slightly differently in the 3 cases of different raw extensions
@@ -43,7 +45,7 @@ def set_basic_info_new(config: dict) -> NotebookPage:
     all_files.sort()
     if raw_extension == ".nd2":
         if config_file["round"] is None and config_file["anchor"] is None:
-            log.error(ValueError(f"config_file['round'] or config_file['anchor'] should not both be left blank"))
+            log.error(ValueError("config_file['round'] or config_file['anchor'] should not both be left blank"))
         # load in metadata of nd2 file corresponding to first round
         # Allow for degenerate case when only anchor has been provided
         if config_file["round"] is not None:
@@ -58,8 +60,8 @@ def set_basic_info_new(config: dict) -> NotebookPage:
         if metadata_file is None:
             log.error(
                 ValueError(
-                    f"There is no json metadata file in input_dir. This should have been set at the point of "
-                    f"ND2 extraction to npy."
+                    "There is no json metadata file in input_dir. This should have been set at the point of "
+                    "ND2 extraction to npy."
                 )
             )
         metadata = json.load(open(metadata_file))
@@ -76,22 +78,18 @@ def set_basic_info_new(config: dict) -> NotebookPage:
 
     # Stage 2: Read in page contents from config that cannot be computed from metadata.
     # the metadata. First few keys in the basic info page are only variables that the user can influence
-    for key, value in list(config_basic.items())[:13]:
+    for key, value in list(config_basic.items())[:12]:
+        if key == "bad_trc" and value is not None:
+            nbp.__setattr__(
+                key, tuple([(value[3 * i], value[3 * i + 1], value[3 * i + 2]) for i in range(len(value) // 3)])
+            )
+            continue
         nbp.__setattr__(key, value)
     if nbp.bad_trc is None:
         del nbp.bad_trc
         nbp.bad_trc = tuple()
 
-    # some of these can NOT be left empty
-    if nbp.dye_names is None or nbp.tile_pixel_value_shift is None or nbp.use_anchor is None:
-        log.error(
-            ValueError(
-                "One or more of the 3 variables which cannot be computed from anything else has been left "
-                "empty. Please fill in the use_anchor, dye_names and pixel_value_shift variables."
-            )
-        )
-
-    # Stage 3: Fill in all the metadata except the last item, xy_pos
+    # Stage 3: Fill in all the metadata except xy_pos and nz.
     for key, value in metadata.items():
         if key in ("xy_pos", "nz"):
             continue
@@ -99,6 +97,14 @@ def set_basic_info_new(config: dict) -> NotebookPage:
         if type(value) is list:
             value = np.array(value)
         nbp.__setattr__(key, value)
+
+    # Reverse the tile positions from raw tiles, if true.
+    reversed_tilepos_yx_nd2 = nbp.tilepos_yx_nd2
+    del nbp.tilepos_yx_nd2
+    reversed_tilepos_yx_nd2 = tile_details.reverse_raw_tile_positions(
+        reversed_tilepos_yx_nd2, config_basic["reverse_tile_positions_x"], config_basic["reverse_tile_positions_y"]
+    )
+    nbp.tilepos_yx_nd2 = reversed_tilepos_yx_nd2
 
     # Stage 4: If anything from the first 12 entries has been left blank, deal with that here.
     # Unfortunately, this is just many if statements as all blank entries need to be handled differently.
@@ -134,7 +140,7 @@ def set_basic_info_new(config: dict) -> NotebookPage:
         del nbp.use_channels
         nbp.use_channels = tuple(np.arange(metadata["n_channels"]).tolist())
     if len(nbp.use_channels) > 9:
-        raise NotImplementedError(f"There must be 9 or fewer sequencing channels to run coppafish.")
+        raise NotImplementedError("There must be 9 or fewer sequencing channels to run coppafish.")
 
     # If no use_z given, default to all except the first if ignore_first_z_plane = True
     if nbp.use_z is None:

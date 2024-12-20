@@ -1,5 +1,5 @@
-from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 
 # Every Viewer subplot inherits the Subplot class. This is so we can have common functions for each subplot for the

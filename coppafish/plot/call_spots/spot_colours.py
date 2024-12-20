@@ -1,17 +1,17 @@
 import matplotlib as mpl
-from matplotlib import cm
-from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button
 import mplcursors
 import numpy as np
 import zarr
+from matplotlib import cm
+from matplotlib.patches import Rectangle
+from matplotlib.widgets import Button
 
-from ..results_viewer.subplot import Subplot
 from ...call_spots.dot_product import gene_prob_score
 from ...omp import base as omp_base
 from ...setup.notebook import NotebookPage
 from ...spot_colours import base as spot_colours_base
+from ..results_viewer.subplot import Subplot
 
 
 class ViewSpotColourAndCode(Subplot):
@@ -448,10 +448,8 @@ class GeneSpotsViewer:
 
     def load_spots(self, gene_index: int):
         # initialise variables
-        nbp_basic = self.nbp_basic
         nbp_ref_spots = self.nbp_ref_spots
         nbp_call_spots = self.nbp_call_spots
-        nbp_omp = self.nbp_omp
         colour_norm = nbp_call_spots.colour_norm_factor
 
         # get spots for gene gene_index

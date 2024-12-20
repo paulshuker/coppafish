@@ -3,6 +3,8 @@ from typing import Tuple
 import numpy as np
 import torch
 
+from ..utils import system
+
 
 def wiener_deconvolve(
     image: np.ndarray, im_pad_shape: Tuple[int], filter: np.ndarray, force_cpu: bool = True
@@ -15,7 +17,7 @@ def wiener_deconvolve(
         - (`tuple of three ints`) im_pad_shape: how much to pad the image in y, x, and z directions.
         - (`(n_im_y+2*n_pad_y, n_im_x+2*n_pad_x, n_im_z+2*n_pad_z) ndarray[complex128]`) filter: the Wiener filter to
             use.
-        - (bool, optional) force_cpu: force the computation to run on the CPU only. Default: true.
+        - (bool, optional) force_cpu: always run on the CPU. Default: true.
 
     Returns:
         `(n_im_y x n_im_x x n_im_z) ndarray[float]`: deconvolved image.
@@ -26,9 +28,7 @@ def wiener_deconvolve(
     assert type(filter) is np.ndarray
     assert type(force_cpu) is bool
 
-    run_device = torch.device("cpu")
-    if not force_cpu and torch.cuda.is_available():
-        run_device = torch.device("cuda")
+    run_device = system.get_device(force_cpu)
 
     im_av = np.median(image[:, :, 0])
     image = np.pad(
@@ -54,4 +54,6 @@ def wiener_deconvolve(
     ]
     im_deconvolved = im_deconvolved.cpu()
     # Convert result back to a numpy array
-    return im_deconvolved.numpy()
+    im_deconvolved = im_deconvolved.numpy()
+
+    return im_deconvolved

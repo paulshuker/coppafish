@@ -43,8 +43,8 @@ def test_ViewSpotColourAndCode() -> None:
         show=False,
     )
     assert type(view) is spot_colours.ViewSpotColourAndCode
-    assert np.allclose(spot_colour_init, spot_colour), f"spot_colour was modified"
-    assert np.allclose(gene_bled_code_init, gene_bled_code), f"gene_bled_code was modified"
+    assert np.allclose(spot_colour_init, spot_colour), "spot_colour was modified"
+    assert np.allclose(gene_bled_code_init, gene_bled_code), "gene_bled_code was modified"
     view.plot_colour()
     view.change_background()
     view.change_use_colour_norm()

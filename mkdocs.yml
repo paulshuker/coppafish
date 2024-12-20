@@ -17,19 +17,18 @@ theme:
     - content.code.annotation
     # Copy code button
     - content.code.copy
-  
+
   language: en
 
   palette:
     # Palette toggle for dark mode
     - scheme: slate
       primary: teal
-      scheme: slate
       accent: indigo
       toggle:
         icon: material/weather-night
         name: Switch to light mode
-    
+
     # Palette toggle for light mode
     - scheme: default
       toggle:
@@ -57,6 +56,9 @@ nav:
 markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
+  # Code snippets can now be embedded into the docs from coppafish/docs.
+  - pymdownx.snippets:
+      base_path: ["coppafish/docs"]
   # Code can be highlighted, for example python code by code block: ``` python ...``` or inline: `#!python ...`.
   - admonition
   - pymdownx.details
@@ -82,7 +84,6 @@ plugins:
 extra_javascript:
   - javascripts/config.js
   - https://polyfill.io/v3/polyfill.min.js?features=es6
-  - javascripts/katex.js
   - https://unpkg.com/katex@0/dist/katex.min.js
   - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
 

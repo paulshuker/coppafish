@@ -6,9 +6,9 @@ from typing import Any, Optional, Tuple
 
 import numpy as np
 
-from . import config
 from .. import log
 from ..utils import system as utils_system
+from .config import Config
 from .notebook_page import NotebookPage
 
 
@@ -84,7 +84,7 @@ class Notebook:
         ],
     }
 
-    def __init__(self, notebook_dir: str, config_path: Optional[str] = None, must_exist: bool = False) -> None:
+    def __init__(self, notebook_dir: str, config_path: Optional[str] = None, must_exist: bool = True) -> None:
         """
         Load the notebook found at the given directory. Or, if the directory does not exist, create the directory.
 
@@ -92,7 +92,7 @@ class Notebook:
             notebook_dir (str): the notebook directory to write into and/or load from.
             config_path (str, optional): path to the pipeline's config file. This must be given for new pages to be
                 added, i.e. during the pipeline runtime. Default: not given.
-            must_exists (bool, optional): crash if the notebook does not already exist. Default: false.
+            must_exists (bool, optional): crash if the notebook does not already exist. Default: true.
         """
         assert type(notebook_dir) is str
         assert config_path is None or type(config_path) is str
@@ -107,7 +107,7 @@ class Notebook:
         self._version = utils_system.get_software_version()
         if not os.path.isdir(self._directory):
             if self._config_path is None:
-                raise ValueError(f"To create a new notebook, config_path must be specified")
+                raise ValueError("To create a new notebook, config_path must be specified")
             log.info(f"Creating notebook at {self._directory}")
             os.mkdir(self._directory)
             self._save()
@@ -174,9 +174,11 @@ class Notebook:
                 if result == "y":
                     for earlier_page_name in earlier_pages:
                         self.delete_page(earlier_page_name, prompt=False)
+                        print(f"{earlier_page_name} deleted")
         page_name_directory = self._get_page_directory(page_name)
         shutil.rmtree(page_name_directory)
         self.__delattr__(page_name)
+        print(f"{page_name} deleted")
 
     def resave(self) -> None:
         """
@@ -186,8 +188,6 @@ class Notebook:
         # to manually change variables that are already saved to disk. Even then, this function should be used as
         # little as possible as it will inevitably cause bugs.
         start_time = time.time()
-        # for page in self._get_existing_pages():
-        #     page.resave(self._get_page_directory(page.name))
         for filename in os.listdir(self._directory):
             filepath = os.path.join(self._directory, filename)
             if os.path.isfile(filepath) and filepath != self._get_metadata_path():
@@ -300,16 +300,17 @@ class Notebook:
             "Is the notebook from a different software version? If you are unsure, it "
             + "is recommended to delete the notebook and re-run the pipeline."
         )
-        config_on_disk = config.get_config(self.config_path)
+        config_on_disk = Config()
+        config_on_disk.load(self.config_path, post_check=False)
 
         for page in self._get_added_pages():
             for config_section in page.associated_configs:
-                if config_section not in config_on_disk:
+                if config_section not in config_on_disk.get_section_names():
                     log.warn(f"{msg_prefix} section {config_section}. {msg_suffix}")
                     continue
                 for var_name, value in page.associated_configs[config_section].items():
                     is_equal = False
-                    if var_name not in config_on_disk[config_section].keys():
+                    if var_name not in config_on_disk[config_section].get_parameter_names():
                         log.warn(f"{msg_prefix} variable named {var_name} in section {config_section}. {msg_suffix}")
                         modified_variables += (var_name,)
                         continue

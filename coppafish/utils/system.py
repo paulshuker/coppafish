@@ -1,8 +1,10 @@
 import os
-from pathlib import PurePath
 import shutil
-from typing import Tuple
+import socket
+import ssl
 import urllib
+from pathlib import PurePath
+from typing import Tuple
 
 import numpy as np
 import psutil
@@ -44,7 +46,7 @@ def get_remote_software_version() -> str:
         version_contents = str(f.read())
         index_start = version_contents.index(consts.VERSION_ENCAPSULATE)
         index_end = version_contents.index(consts.VERSION_ENCAPSULATE, index_start + 1)
-    except urllib.error.HTTPError or urllib.error.URLError:
+    except (urllib.error.HTTPError, urllib.error.URLError):
         # This can be reached if GitHub refuses the request due to too many recent requests.
         return fallback
     return version_contents[index_start + 1 : index_end]
@@ -82,6 +84,23 @@ def get_available_memory(device: torch.device = None) -> float:
         return psutil.virtual_memory().available / 1e9
     else:
         raise ValueError(f"Unknown device {device}")
+
+
+def get_device(force_cpu: bool) -> torch.device:
+    """
+    Get the best device available for pytorch. If not forced to use the CPU and CUDA is available, then the GPU device
+    is returned. Otherwise, the CPU is returned.
+
+    Args:
+        force_cpu (bool): force return the CPU.
+
+    Returns:
+        (`torch.device`): device. Is either torch.device("cpu") or torch.device("cuda").
+    """
+    if not force_cpu and torch.cuda.is_available():
+        return torch.device("cuda")
+
+    return torch.device("cpu")
 
 
 def get_core_count() -> int:
@@ -131,5 +150,15 @@ def internet_is_active() -> bool:
     try:
         urllib.request.urlopen("http://www.google.com")
         return True
-    except:
+    except (
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        ValueError,
+        socket.gaierror,
+        TimeoutError,
+        OSError,
+        ssl.SSLError,
+        ConnectionResetError,
+        FileNotFoundError,
+    ):
         return False

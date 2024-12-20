@@ -1,18 +1,18 @@
 import warnings
 
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
 import mplcursors
 import numpy as np
+from matplotlib.widgets import Slider
 
-from coppafish.omp import coefs
-from coppafish.setup import config
+from coppafish.omp import pixel_scores
+from coppafish.plot.results_viewer.subplot import Subplot
+from coppafish.setup.config import Config
 from coppafish.setup.notebook import NotebookPage
 from coppafish.spot_colours import base as spot_colours_base
-from coppafish.plot.results_viewer.subplot import Subplot
 
 
-class ViewOMPDotProductScores(Subplot):
+class ViewOMPGeneScores(Subplot):
     def __init__(
         self,
         nbp_basic: NotebookPage,
@@ -25,7 +25,7 @@ class ViewOMPDotProductScores(Subplot):
         show: bool = True,
     ):
         """
-        View a spot's gene dot product scores on each OMP iteration. A slider is used to switch between OMP iteration
+        View a spot's gene dot product scores at each OMP iteration. A slider is used to switch between OMP iteration
         number.
 
         Args:
@@ -46,12 +46,16 @@ class ViewOMPDotProductScores(Subplot):
         assert type(spot_local_yxz) is np.ndarray
         assert spot_local_yxz.shape == (3,)
 
-        max_genes = config.get_default_for("omp", "max_genes")
-        dot_product_threshold = config.get_default_for("omp", "dot_product_threshold")
-        min_intensity = config.get_default_for("omp", "minimum_intensity")
+        alpha = Config.get_default_for("omp", "alpha")
+        beta = Config.get_default_for("omp", "beta")
+        max_genes = Config.get_default_for("omp", "max_genes")
+        dot_product_threshold = Config.get_default_for("omp", "dot_product_threshold")
+        min_intensity = 0.0
         if nbp_omp is not None:
             omp_config = nbp_omp.associated_configs["omp"]
-            min_intensity = float(omp_config["minimum_intensity"])
+            min_intensity = float(nbp_omp.results[f"tile_{spot_tile}"].attrs["minimum_intensity"])
+            alpha = float(omp_config["alpha"])
+            beta = float(omp_config["beta"])
             max_genes = int(omp_config["max_genes"])
             dot_product_threshold = float(omp_config["dot_product_threshold"])
         n_rounds_use = len(nbp_basic.use_rounds)
@@ -70,7 +74,7 @@ class ViewOMPDotProductScores(Subplot):
             out_of_bounds_value=0,
         )
         image_colours *= nbp_call_spots.colour_norm_factor[[spot_tile]]
-        omp_solver = coefs.CoefficientSolverOMP()
+        omp_solver = pixel_scores.PixelScoreSolver()
         bled_codes = nbp_call_spots.bled_codes.astype(np.float32)
         bg_bled_codes = omp_solver.create_background_bled_codes(n_rounds_use, n_channels_use)
         _, self.dp_scores = omp_solver.solve(
@@ -80,6 +84,8 @@ class ViewOMPDotProductScores(Subplot):
             maximum_iterations=max_genes,
             dot_product_threshold=self.dp_thresh,
             minimum_intensity=min_intensity,
+            alpha=alpha,
+            beta=beta,
             return_all_scores=True,
         )
         n_iterations = self.dp_scores.shape[0]
@@ -109,7 +115,7 @@ class ViewOMPDotProductScores(Subplot):
         self.plot_ax.set_title(
             f"Pixel {tuple(spot_local_yxz)}, Tile {spot_tile} Gene Dot Product Scores\n(0, "
             + f"{n_genes_all - n_channels_use}) are gene indices, ({n_genes_all - n_channels_use}, {n_genes_all}) are "
-            + f"background genes"
+            + "background genes"
         )
         self.plot_ax.set_ylabel("Gene Score")
         max_score = max(1, self.dp_scores.max().item())

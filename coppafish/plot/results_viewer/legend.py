@@ -1,150 +1,165 @@
-import importlib.resources as importlib_resources
-import os
-from typing import Optional, Tuple
+import colorsys
+import math as maths
 
+import matplotlib
+import numpy as np
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvasHeadless
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import pandas as pd
-import napari
-import numpy as np
-
-# Subplot settings
-left = 0.05
-right = 0.95
-bottom = 0.05
-top = 0.95
-hspace = 0.05
-n_labels_per_column = 26
-n_gene_label_letters = 7  # max number of letters in gene label legend
 
 
-def cell_type_ax(ax, cells):
-
-    ax.set_title("Celltype legend")
-
-    for c in cells.index:
-
-        x = 0.05 + ((c // 25) * 2)
-        y = 25 - (c - (25 * (c // 25)))
-
-        rect = patches.Rectangle((x, y), 0.12, 0.7, facecolor=cells.loc[c, "color"], edgecolor="w", linewidth=0.5)
-        ax.add_patch(rect)
-
-        ax.text(x + 0.15, y - 0.02, s=cells.loc[c, "className"])
-
-    ax.set_xticks([])
-    ax.set_yticks([])
-
-    ax.set_xlim((-0.05, 6))
-    ax.set_ylim((0, 26))
-
-    return ax
+# A headless (Agg) backend version of MplCanvas, this is required for unit testing the gene legend.
+class MplCanvasHeadless(FigureCanvasHeadless):
+    def __init__(self, _=None):
+        fig = Figure()
+        fig.set_size_inches(5, 4)
+        self.axes = fig.subplots(1, 1)
+        super(MplCanvasHeadless, self).__init__(fig)
 
 
-def gene_ax(ax: plt.Axes, gene_legend_info: pd.DataFrame, genes: np.ndarray):
-
-    ax.set_title("Gene legend")
-
-    added_ind = 0
-    n_columns = int(np.ceil(genes.size / n_labels_per_column))
-    n_genes_per_column = int(np.ceil(genes.size / n_columns))
-    x = None
-    for g in gene_legend_info.index:
-        if np.isin(gene_legend_info["GeneNames"][g], genes):
-            gene_color = (
-                gene_legend_info.loc[g, "ColorR"],
-                gene_legend_info.loc[g, "ColorG"],
-                gene_legend_info.loc[g, "ColorB"],
-            )
-
-            x = 0.05 + (added_ind // n_genes_per_column) / n_columns * 2.5
-            y = n_genes_per_column - (added_ind - (n_genes_per_column * (added_ind // n_genes_per_column)))
-
-            m = gene_legend_info.loc[g, "mpl_symbol"]
-
-            ax.scatter(x=x, y=y, marker=m, facecolor=gene_color, s=50)
-            ax.text(x=x + 0.05, y=y - 0.3, s=gene_legend_info.loc[g, "GeneNames"][:n_gene_label_letters], c=gene_color)
-            added_ind += 1
-
-    ax.set_xticks([])
-    ax.set_yticks([])
-    if x is not None:
-        ax.set_xlim((-0.05, x + 0.5))  # last x value is the maximum
-
-    return ax
+class MplCanvas(FigureCanvas):
+    def __init__(self, _=None):
+        fig = Figure()
+        fig.set_size_inches(5, 4)
+        self.axes = fig.subplots(1, 1)
+        super(MplCanvas, self).__init__(fig)
 
 
-def add_legend(
-    gene_legend_info: Optional[pd.DataFrame],
-    genes: Optional[np.ndarray] = None,
-    cell_legend_info: Optional[pd.DataFrame] = None,
-) -> Tuple[FigureCanvas, plt.Axes, int]:
-    """
-    This returns a legend which displays the genes and/or cell types present.
+class Legend:
+    _max_columns: int = 4
+    _x_separation: float = 0.25
+    _text_scatter_separation: float = 0.02
+    _unselected_opacity: float = 0.25
+    _selected_opacity: float = 1.0
+    _selection_radius: float = 0.25
+    _order_by_options: tuple[str] = ("row", "colour")
+    _plot_index_to_gene_index: np.ndarray[int]
+    # A conversion from a napari marker to a matplotlib marker equivalent.
+    _napari_to_mpl_marker: dict[str, str] = {
+        "cross": "+",
+        "disc": "o",
+        "square": "s",
+        "triangle_up": "^",
+        "triangle_down": "v",
+        "hbar": "_",
+        "vbar": "|",
+        "star": "*",
+        "arrow": ">",
+        "ring": "o",  # A ring is the same as disc but the face colour is set to None with only an edge colour.
+        "clobber": r"$\clubsuit$",
+        "x": "x",
+        "diamond": "d",
+    }
 
-    Args:
-        gene_legend_info: `[n_legend_genes x 6]` pandas data frame containing the following information for each gene
-            - GeneNames - str, name of gene with first letter capital
-            - ColorR - float, Rgb color for plotting
-            - ColorG - float, rGb color for plotting
-            - ColorB - float, rgB color for plotting
-            - napari_symbol - str, symbol used to plot in napari
-            - mpl_symbol - str, equivalent of napari symbol in matplotlib.
-        genes: str [n_genes]
-            Genes in current experiment.
-        cell_legend_info: [n_legend_cell_types x 3] pandas data frame containing the following information for each
-            cell type
-            - className
-            - IdentifiedType
-            - color
+    def __init__(self) -> None:
+        self._selection_radius_squared = self._selection_radius**2
 
-    Returns:
-        - mpl_widget - figure of legend.
-        - ax - axes containing info about gene symbols in `ax.collections` and gene labels in `ax.texts`.
-        - n_gene_label_letters - max number of letters in each gene label in the legend.
-    """
-    plt.style.use("dark_background")
-    if genes is None and gene_legend_info is not None:
-        genes = np.asarray(gene_legend_info["GeneNames"])  # show all genes in legend if not given
-    if genes is not None:
-        # make x dimension of figure equal to number of columns in legend
-        fig_size = [int(np.ceil(genes.size / n_labels_per_column)), 4]
-    else:
-        fig_size = [5, 4]
-    mpl_widget = FigureCanvas(Figure(figsize=fig_size))
-    if cell_legend_info is not None and gene_legend_info is not None:
+    def get_order_by_options(self) -> tuple[str]:
+        return self._order_by_options
 
-        ax = mpl_widget.figure.subplots(
-            2,
-            1,
-            gridspec_kw={
-                "height_ratios": [1, 1],
-                "hspace": hspace,
-                "top": top,
-                "bottom": bottom,
-                "left": left,
-                "right": right,
-            },
-        )
-        ax[0] = cell_type_ax(ax[0], cells=cell_legend_info)
-        ax[1] = gene_ax(ax[1], gene_legend_info, genes)
+    order_by_options: tuple[str] = property(get_order_by_options)
 
-    elif cell_legend_info is not None and gene_legend_info is None:
+    def create_gene_legend(self, genes: tuple, order_by: str):
+        """
+        Create a new gene legend.
+        """
+        assert order_by in self._order_by_options
 
-        ax = mpl_widget.figure.subplots(gridspec_kw={"top": top, "bottom": bottom, "left": left, "right": right})
+        if matplotlib.get_backend() == "Agg":
+            self.canvas = MplCanvasHeadless()
+        else:
+            self.canvas = MplCanvas()
+        self.scatter_axes = []
+        # Gene scatter points are populated within a bounding box of -1 to 1 in both x and y directions.
+        X, Y = [], []
+        active_genes = [gene for gene in genes if gene.active]
+        active_count = len(active_genes)
+        self._plot_index_to_gene_index = np.linspace(0, active_count - 1, active_count, dtype=int)
+        if order_by == "colour":
+            index_min = 0
+            active_colours = np.array([gene.colour for gene in genes if gene.active])
+            for unique_colour in self._hue_sort(np.unique(active_colours, axis=0)):
+                unique_colour_indices = (active_colours == unique_colour).all(1).nonzero()[0]
+                unique_colour_names = [active_genes[i].name.lower() for i in unique_colour_indices]
+                names_sorted_indices = np.argsort(unique_colour_names)
+                # The unique colour genes are then sorted by their names alphabetically.
+                unique_colour_indices = unique_colour_indices[names_sorted_indices]
+                index_max = index_min + len(unique_colour_names)
+                self._plot_index_to_gene_index[index_min:index_max] = unique_colour_indices
+                index_min = index_max
+        row_count = maths.ceil(active_count / self._max_columns)
+        text_kwargs = dict(fontsize=5 + 20 / maths.sqrt(active_count), ha="left", va="center", c="grey")
+        assert np.unique(self._plot_index_to_gene_index).size == self._plot_index_to_gene_index.size
+        active_genes = [active_genes[i] for i in self._plot_index_to_gene_index]
+        for i, gene in enumerate(active_genes):
+            x = (i % self._max_columns) * self._x_separation
+            y = 1 - (i - (i % self._max_columns)) / row_count
+            self.canvas.axes.text(x + self._text_scatter_separation, y, gene.name, **text_kwargs)
+            marker = self._napari_to_mpl_marker[gene.symbol_napari]
+            scatter_kwargs = dict()
+            scatter_kwargs["s"] = 20 + 10 / maths.sqrt(active_count)
+            if gene.symbol_napari == "ring":
+                scatter_kwargs["facecolor"] = "none"
+                scatter_kwargs["edgecolor"] = gene.colour
+            self.scatter_axes.append(self.canvas.axes.scatter(x, y, marker=marker, color=gene.colour, **scatter_kwargs))
+            X.append(x)
+            Y.append(y)
+        self.canvas.axes.set_title("Gene Legend")
+        self.canvas.axes.set_xlim(min(X), max(X) + self._text_scatter_separation)
+        self.canvas.axes.set_ylim(min(Y) - 0.03, max(Y) + 0.03)
+        self.canvas.axes.set_xticks([])
+        self.canvas.axes.set_yticks([])
+        self.canvas.axes.spines.clear()
+        self.X = np.array(X, np.float32)
+        self.Y = np.array(Y, np.float32)
 
-        cell_type_ax(ax, cells=cell_legend_info)
+    def update_selected_legend_genes(self, active_genes: list[bool]) -> None:
+        """
+        Update which genes are currently selected in the viewer. A selected gene is given a high opacity.
+        """
+        active_genes_sorted = [active_genes[i] for i in self._plot_index_to_gene_index]
+        for scatter_ax, active in zip(self.scatter_axes, active_genes_sorted):
+            if active:
+                scatter_ax.set_alpha(self._selected_opacity)
+            else:
+                scatter_ax.set_alpha(self._unselected_opacity)
+        self.canvas.draw_idle()
 
-    elif cell_legend_info is None and gene_legend_info is not None:
+    def get_closest_gene_index_to(self, x: float, y: float) -> int | None:
+        """
+        Find the gene index of the closest gene to the given 2d position.
 
-        ax = mpl_widget.figure.subplots(gridspec_kw={"top": top, "bottom": bottom, "left": left, "right": right})
+        Args:
+            x (float-like): x position.
+            y (float-like): y position.
 
-        gene_ax(ax, gene_legend_info, genes)
-
-    else:
-        print("Both gene_legend_info and cell_legend_info are None so no legend added.")
+        Returns:
+            (int or none): gene_index. The closest gene index. None if no gene is nearby.
+        """
+        radii = (self.X - x) ** 2 + (self.Y - y) ** 2
+        min_radius = np.min(radii)
+        if min_radius <= self._selection_radius_squared:
+            plot_index = np.argmin(radii).item()
+            return self._plot_index_to_gene_index.tolist()[plot_index]
         return None
-    plt.style.use("dark_background")
-    return mpl_widget, ax, n_gene_label_letters
+
+    def _hue_sort(self, colours: np.ndarray[float]) -> np.ndarray[float]:
+        """
+        The given colours are sorted based on their hues.
+
+        Args:
+            colours (`(n_colours x 3) ndarray[float]`): each colours RGB value, ranging from 0 to 1.
+
+        Returns:
+            (`(n_colours x 3) ndarray[float]`): Each colour, now sorted by hue from lowest to highest.
+        """
+        assert type(colours) is np.ndarray
+        assert colours.ndim == 2
+        assert colours.shape[0] > 0
+        assert colours.shape[1] == 3
+
+        hues = []
+        for colour in colours:
+            assert colour.shape == (3,)
+            hues.append(colorsys.rgb_to_hsv(colour[0].item(), colour[1].item(), colour[2].item())[0])
+        return colours[np.argsort(hues)]

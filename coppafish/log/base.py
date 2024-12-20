@@ -1,5 +1,3 @@
-from collections.abc import Callable
-from datetime import datetime
 import logging
 import smtplib
 import socket
@@ -7,7 +5,11 @@ import subprocess
 import sys
 import time
 import traceback
+from collections.abc import Callable
+from datetime import datetime
 from typing import Any, Union
+
+from plyer import notification
 
 DEBUG = 10
 INFO = 20
@@ -23,38 +25,53 @@ severity_to_name = {
 }
 
 
-def error_catch(func: Callable, *args, **kwargs) -> Any:
+def error_catch(function: Callable, *args, **kwargs) -> Any:
     """
     Any raised Exceptions that are not Keyboard/System interrupts are captured here and then sent to the logger as an
     error so the errors can be saved to the pipeline's .log file, when given.
 
     Args:
-        - func (Callable): function to run and catch errors on. All other parameters are input into func.
+        function (Callable): function to run and catch errors on. All other parameters are input into function.
+        args (tuple of any): positional arguments used in function.
+        kwargs (dict[str, any]): keyword arguments used in function.
 
     Returns:
-        Any: function output.
+        Any: the function's output if no exceptions occurred.
     """
     try:
-        result = func(*args, **kwargs)
+        result = function(*args, **kwargs)
     except Exception as e:
         error(e)
-        raise RuntimeError("Should not reach here")
+        raise RuntimeError("Should not reach here") from e
     return result
 
 
 def set_log_config(
     minimum_print_severity: int = INFO,
     log_file_path: str = None,
+    allow_notifications: bool = False,
+    notify_crash: bool = False,
     email_recipient: str = None,
     email_sender: str = None,
     email_sender_password: str = None,
 ) -> None:
     """
-    Set the required information before logging.
+    Set the required information for logging. This must be called once before any logs are made.
+
+    The information is remembered by using global variables. Therefore, this configuration must be done everytime
+    coppafish is run. The log config is set automatically with all defaults when coppafish is imported. But, it can then
+    be overwritten by calling this function again.
 
     Args:
-        minimum_print_severity (int): the minimum severity of message to be printed to the terminal.
-        log_file_path (str, optional): the file path to the file to place all messages inside of. Default: do not save.
+        minimum_print_severity (int, optional): the minimum severity of message to be printed to the terminal. Default:
+            INFO logs.
+        log_file_path (str, optional): file path to place every log messages inside of in order. Default: not given.
+        allow_notifications (bool, optional): allow notifications to the operating system. Default: false.
+        notify_crash (bool, optional): allow crash notifications to the operating system. This only works if
+            allow_notifications is true as well. Default: false.
+        email_recipient (str, optional): email to send email notifications to. Default: not given.
+        email_sender (str, optional): email used to send email notifications. Default: not given.
+        email_sender_password (str, optional): email password used to send email notifications. Default: not given.
     """
     global _start_time
     _start_time = time.time()
@@ -62,12 +79,17 @@ def set_log_config(
     _minimum_print_severity = minimum_print_severity
     global _log_file
     _log_file = log_file_path
+    global _allow_notifications
+    _allow_notifications = allow_notifications
+    global _notify_crash
+    _notify_crash = notify_crash
     global _email_recipient
     _email_recipient = email_recipient
     global _email_sender
     _email_sender = email_sender
     global _email_sender_password
     _email_sender_password = email_sender_password
+
     logging.basicConfig(format="%(message)s", level=logging.ERROR)
     logging.getLogger("coppafish").setLevel(logging.DEBUG)
 
@@ -76,8 +98,8 @@ def debug(msg: Union[str, Exception], force_email: bool = False) -> None:
     log(msg, DEBUG, force_email=force_email)
 
 
-def info(msg: Union[str, Exception], force_email: bool = False) -> None:
-    log(msg, INFO, force_email=force_email)
+def info(msg: Union[str, Exception], force_email: bool = False, notify: bool = False) -> None:
+    log(msg, INFO, force_email=force_email, notify=notify)
 
 
 def warn(msg: Union[str, Exception], force_email: bool = False) -> None:
@@ -88,7 +110,7 @@ def error(msg: Union[str, Exception], force_email: bool = False) -> None:
     log(msg, ERROR, force_email=force_email)
 
 
-def log(msg: Union[str, Exception], severity: int, force_email: bool = False) -> None:
+def log(msg: Union[str, Exception], severity: int, force_email: bool = False, notify: bool = False) -> None:
     """
     Log a message to the log file. The message is printed to the terminal if the message is severe enough.
 
@@ -116,8 +138,8 @@ def log(msg: Union[str, Exception], severity: int, force_email: bool = False) ->
             f"On device {socket.gethostname()}, "
             + f"after {round(delta_time // 60)}hrs and {round(delta_time % 60)}mins:\n\n"
             + message
-            + f"\n\nFor errors, please refer to our troubleshoot page "
-            + f"(https://paulshuker.github.io/coppafish/troubleshoot/)"
+            + "\n\nFor errors, please refer to our troubleshoot page "
+            + "(https://paulshuker.github.io/coppafish/troubleshoot/)"
         )
         send_email(
             f"COPPAFISH: {severity_to_name[severity]}",
@@ -126,6 +148,8 @@ def log(msg: Union[str, Exception], severity: int, force_email: bool = False) ->
             _email_recipient,
             _email_sender_password,
         )
+    if notify and _allow_notifications or (severity >= CRASH_ON and _notify_crash and _allow_notifications):
+        notification.notify(title="Coppafish", message=message, app_name="coppafish")
     if severity >= CRASH_ON:
         # Crash on high severity
         if isinstance(msg, Exception):

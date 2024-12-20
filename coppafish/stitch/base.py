@@ -2,8 +2,8 @@ from typing import Tuple
 
 import numpy as np
 import skimage
-from tqdm import tqdm
 import zarr
+from tqdm import tqdm
 
 from ..register import preprocessing
 

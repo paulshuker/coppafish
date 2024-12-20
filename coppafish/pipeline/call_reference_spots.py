@@ -10,32 +10,23 @@ import zarr
 from .. import log
 from ..call_spots.base import bayes_mean, compute_bleed_matrix
 from ..call_spots.dot_product import dot_product_score, gene_prob_score
+from ..setup.config_section import ConfigSection
 from ..setup.notebook_page import NotebookPage
 from ..utils import system
 
 
 def call_reference_spots(
-    config: dict, nbp_ref_spots: NotebookPage, nbp_file: NotebookPage, nbp_basic: NotebookPage
+    config: ConfigSection, nbp_ref_spots: NotebookPage, nbp_file: NotebookPage, nbp_basic: NotebookPage
 ) -> Tuple[NotebookPage, NotebookPage]:
     """
     Function to do gene assignments to reference spots. In doing so we compute some important parameters for the
     downstream OMP analysis also.
 
     Args:
-        - config: dict
-            The configuration dictionary for the call spots page. Should contain the following keys:
-            - gene_prob_threshold: float
-                The threshold for the gene probability score.
-            - target_values: list (length n_channels_use)
-                If d_max[c] is the dye which channel c is brightest in, then target_values[c] is the value that we will
-                try to scale all instances of d_max[c] to in this channel.
-            - concentration_param_parallel: float
-                The concentration parameter for the parallel direction of the prior.
-            - concentration_param_perpendicular: float
-                The concentration parameter for the perpendicular direction of the prior.
-        - nbp_ref_spots (NotebookPage): `ref_spots` notebook page.
-        - nbp_file (NotebookPage): `file_names` notebook page.
-        - nbp_basic (NotebookPage): `basic_info` notebook page.
+        config (ConfigSection): the `call_spots` config section.
+        nbp_ref_spots (NotebookPage): `ref_spots` notebook page.
+        nbp_file (NotebookPage): `file_names` notebook page.
+        nbp_basic (NotebookPage): `basic_info` notebook page.
 
     Returns:
         nbp: NotebookPage
@@ -46,7 +37,7 @@ def call_reference_spots(
     # TODO: Run call spots on each tile separately as this is robust for huge, many tile datasets.
 
     log.info("Call spots started")
-    nbp = NotebookPage("call_spots", {"call_spots": config})
+    nbp = NotebookPage("call_spots", {config.name: config.to_dict()})
 
     # assign config values that have not been provided
     if config["target_values"] is None:
@@ -191,7 +182,9 @@ def call_reference_spots(
     for batch_i in range(n_batches):
         index_min = batch_i * n_max_score_pixels
         index_max = min(spot_colours.shape[0], (batch_i + 1) * n_max_score_pixels)
-        batch_scores = dot_product_score(spot_colours=spot_colours[index_min:index_max], bled_codes=bled_codes)
+        batch_scores = dot_product_score(
+            spot_colours=spot_colours[np.newaxis, index_min:index_max], bled_codes=bled_codes[np.newaxis, np.newaxis]
+        )[0]
         gene_dot_products[index_min:index_max] = batch_scores
         del batch_scores
     dp_gene, dp_score = np.argmax(gene_dot_products, axis=1).astype(np.int16), np.max(gene_dot_products, axis=1)

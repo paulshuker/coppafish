@@ -11,11 +11,11 @@ The stitch section is the part of the pipeline responsible for creating a global
 ## Algorithm
 The origin of each tile $t_i$, which we call $\mathbf{X}_i$ is the position of its top left corner in the global coordinate system. Each tile $t_i$ is given a _nominal origin_ $\mathbf{\tilde{X}}_i$ given by
 
-$$ 
+$$
 \mathbf{\tilde{X}}_i = T(1-r) \bigg( Y_i, X_i, 0 \bigg),
 $$
 
-where 
+where
 
 - $T$ is the size in pixels of the tile. We typically have $T = 2304$,
 
@@ -33,7 +33,7 @@ These origins are corrected by shifts $\mathbf{S}_i$ which capture small deviati
   </li>
 
   <li>
-    Assign each shift $\mathbf{v}_{ij}$ a score $\lambda_{ij}$. We use 
+    Assign each shift $\mathbf{v}_{ij}$ a score $\lambda_{ij}$. We use
 
     $$
     \lambda_{ij} = \mathrm{corr}_ {\mathbf{x}}(t_i(\mathbf{x - v_{ij}}), t_j(\mathbf{x}))^2.
@@ -71,7 +71,7 @@ Once we have the final origins $\mathbf{X}_i$, we can fuse the images together. 
 
 
 ## Global Coordinates and Duplicate Spots
-Each pixel $p$ has local coordinate $\mathbf{q}_p$ which we can convert to global coordinates $\mathbf{Q}_p$  by adding the origin of pixel $p$'s parent tile, ie:  $\mathbf{Q}_p = \mathbf{q}_p + \mathbf{X}_{t(p)}$. 
+Each pixel $p$ has local coordinate $\mathbf{q}_p$ which we can convert to global coordinates $\mathbf{Q}_p$  by adding the origin of pixel $p$'s parent tile, ie:  $\mathbf{Q}_p = \mathbf{q}_p + \mathbf{X}_{t(p)}$.
 
 As discussed above, this is useful for viewing the spots in a global coordinate frame. It also allows us to remove duplicate spots at the overlap between tiles. This reduces computation time and ensures that no genes are double counted, which would skew the results of downstream analysis.
 
@@ -87,7 +87,7 @@ When performing gene assignments, we only use the pixels $p$ on tile $t$ whose c
 
 ### View Stitch Checkerboard
 
-```pseudo
+```py
 from coppafish.plot.stitch import view_stitch_checkerboard
 view_stitch_checkerboard(nb)
 ```

@@ -1,0 +1,15 @@
+root = true
+
+[*]
+trim_trailing_whitespace = true
+
+[*.py]
+max_line_length = 120
+indent_style = space
+indent_size = 4
+
+[*.md]
+max_line_length = 120
+
+[*.ini]
+max_line_length = 120
