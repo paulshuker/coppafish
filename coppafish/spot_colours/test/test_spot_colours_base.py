@@ -51,9 +51,9 @@ def test_apply_flow_new() -> None:
     yxz_expected[1] = 4, 7, 3
     yxz_expected = torch.tensor(yxz_expected).float()
     yxz_flow = spot_colours_base.apply_flow_new(yxz, flow, tile, round)
-    assert type(yxz_flow) is torch.Tensor
+    assert type(yxz_flow) is np.ndarray
     assert yxz_flow.shape == (2, 3)
-    assert torch.allclose(yxz_flow, yxz_expected)
+    assert torch.allclose(torch.from_numpy(yxz_flow), yxz_expected)
     yxz = torch.tensor(yxz)
     yxz_flow = spot_colours_base.apply_flow_new(yxz, flow, tile, round)
     assert type(yxz_flow) is torch.Tensor

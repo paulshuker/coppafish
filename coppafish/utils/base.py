@@ -1,5 +1,5 @@
-from collections.abc import Callable, Iterable
 import math as maths
+from collections.abc import Callable, Iterable
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -128,7 +128,7 @@ def estimate_runtime() -> None:
     n_tiles = int(eval(input("Number of tiles: ")))
     has_gpu = input("Do you have a GPU available? (y/n): ")
     if has_gpu not in ("y", "n"):
-        raise ValueError(f"Must answer y or n")
+        raise ValueError("Must answer y or n")
     has_gpu = has_gpu == "y"
     # All times are in minutes.
     extract_compress_time = 7.3e-11 * n_tile_pixels * n_rounds * n_channels * n_tiles

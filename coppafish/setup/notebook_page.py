@@ -15,6 +15,15 @@ from ..utils import system as utils_system
 
 # NOTE: Every method and variable with an underscore at the start should not be accessed externally.
 class NotebookPage:
+    """
+    Every notebook page contains variable names and their associated values.
+
+    A notebook page never communicates with a notebook. But, the notebook communicates with notebook pages. There are
+    only a handful of valid page names. Each page can only contain specific variable names, these are stored in the
+    attribute _options. Each variable can only hold specific datatypes given in _options. If a variable is set to a
+    wrong type, PageTypeError is raised.
+    """
+
     def get_page_name(self) -> str:
         return self._name
 
@@ -117,12 +126,6 @@ class NotebookPage:
                 "`channel_laser[i]` is the wavelength in *nm* of the laser on channel $i$."
                 + "`none` if `dye_names = none`.",
             ],
-            "tile_pixel_value_shift": [
-                "int",
-                "This is added onto every tile (except *DAPI*) when it is saved and removed from every tile when loaded."
-                + "Required so we can have negative pixel values when save to *npy* as *uint16*."
-                + "*Typical=15000*",
-            ],
             "n_extra_rounds": [
                 "int",
                 "Number of non-imaging rounds, typically 1 if using anchor and 0 if not.",
@@ -158,14 +161,16 @@ class NotebookPage:
             ],
             "tilepos_yx_nd2": [
                 "ndarray[int]",
-                "[n_tiles x 2] `tilepos_yx_nd2[i, :]` is the $yx$ position of tile with *fov* index $i$ in the *nd2* file."
-                + "Index 0 refers to `YX = [0, 0]`"
-                + "Index 1 refers to `YX = [0, 1]` if `MaxX > 0`",
+                "[n_tiles x 2] `tilepos_yx_nd2[i, :]` is the $yx$ position of tile with *fov* index $i$ in the *nd2*"
+                + "file. Index 0 refers to `YX = [0, 0]`"
+                + "Index 1 refers to `YX = [0, 1]` if `MaxX > 0`. "
+                + "The order can be changed based on config section basic_info options `reverse_tile_positions_x` and "
+                + "`reverse_tile_positions_y`.",
             ],
             "tilepos_yx": [
                 "ndarray[int]",
-                "[n_tiles x 2] `tilepos_yx[i, :]` is the $yx$ position of tile with tile directory (*npy* files) index $i$."
-                + "Equally, `tilepos_yx[use_tiles[i], :]` is $yx$ position of tile `use_tiles[i]`."
+                "[n_tiles x 2] `tilepos_yx[i, :]` is the $yx$ position of tile with tile directory (*npy* files) "
+                + "index $i$. Equally, `tilepos_yx[use_tiles[i], :]` is $yx$ position of tile `use_tiles[i]`."
                 + "Index 0 refers to `YX = [MaxY, MaxX]`"
                 + "Index 1 refers to `YX = [MaxY, MaxX - 1]` if `MaxX > 0`",
             ],
@@ -218,10 +223,6 @@ class NotebookPage:
                 + "required metadata extracted from the initial *nd2* files."
                 + "I.e. it is the output of *coppafish/utils/nd2/save_metadata*",
             ],
-            "dye_camera_laser": [
-                "file",
-                "*csv* file giving the approximate raw intensity for each dye with each camera/laser combination",
-            ],
             "code_book": [
                 "file",
                 "Text file which contains the codes indicating which dye to expect on each round for each gene",
@@ -229,16 +230,6 @@ class NotebookPage:
             "psf": [
                 "file",
                 "*npy* file location indicating the average spot shape" + "This will have the shape `n_z x n_y x n_x`.",
-            ],
-            "pciseq": [
-                "tuple[file]",
-                "2 *csv* files where plotting information for *pciSeq* is saved."
-                + "\n"
-                + "`pciseq[0]` is the path where the *OMP* method output will be saved."
-                + "\n"
-                + "`pciseq[1]` is the path where the *ref_spots* method output will be saved."
-                + "\n"
-                + "If files don't exist, they will be created when the function *coppafish/export_to_pciseq* is run.",
             ],
             "tile_unfiltered": [
                 "tuple[tuple[tuple[file]]]",
@@ -253,6 +244,10 @@ class NotebookPage:
             "initial_bleed_matrix": [
                 "dir or none",
                 "Location of initial bleed matrix file. If `none`, then use the default bleed matrix",
+            ],
+            "omp_mean_spot": [
+                "file or none",
+                "Location of the OMP mean spot .npy file. If `none`, then the default mean spot is used",
             ],
         },
         "extract": {
@@ -269,22 +264,11 @@ class NotebookPage:
             ],
         },
         "filter_debug": {
-            "r_dapi": [
-                "int or none",
-                "Filtering for *DAPI* images is a tophat with `r_dapi` radius."
-                + "Should be approx radius of object of interest."
-                + "Typically this is 8 micron converted to yx-pixel units which is typically 48."
-                + "By default, it is `None` meaning *DAPI* not filtered at all and *npy* file not saved.",
-            ],
             "psf": [
                 "ndarray[float]",
                 "Numpy float array [psf_shape[0] x psf_shape[1] x psf_shape[2]] or None (psf_shape is in config file)"
                 + "Average shape of spot from individual raw spot images normalised so max is 1 and min is 0."
                 + "`None` if not applying the Wiener deconvolution.",
-            ],
-            "time_taken": [
-                "float",
-                "Time taken to run through the filter section, in seconds.",
             ],
         },
         "find_spots": {
@@ -551,8 +535,8 @@ class NotebookPage:
         "omp": {
             "mean_spot": [
                 "ndarray[float32]",
-                "Numpy float16 array [im_y x im_x x im_z]"
-                + "Mean of *OMP* spots in neighbourhood centred on detected isolated spot.",
+                "Numpy float32 array [im_y x im_x x im_z]. "
+                + "The mean spot used to compute the final OMP spot scores",
             ],
             "results": [
                 "zgroup",
@@ -560,7 +544,7 @@ class NotebookPage:
                 + "For example, you can access tile 0's subgroup by doing `nb.omp.results['tile_0']`. Each tile "
                 + "subgroup contains 4 zarr arrays: local_yxz, scores, gene_no, and colours. Each has dtype int16, "
                 + "float16, int16, and float16 respectively. Each has shape (n_spots, 3), (n_spots), (n_spots), "
-                + "(n_spots) respectively. "
+                + "(n_spots, n_rounds_use, n_channels_use) respectively. "
                 + "To gather tile 0's spot's local_yxz's into memory, do `nb.omp.results['tile_0/local_yxz'][:]`. "
                 + "The local_yxz positions are relative to the tile. Converting these to global spot positions "
                 + "requires adding the tile_origin from the 'stitch' page.",
@@ -645,14 +629,14 @@ class NotebookPage:
         "zgroup": ".zgroup",
     }
 
-    def __init__(self, page_name: str, associated_config: Dict[str, Dict[str, Any]] = {}) -> None:
+    def __init__(self, page_name: str, associated_config: Dict[str, Dict[str, Any]] = None) -> None:
         """
         Initialise a new, empty notebook page.
 
         Args:
-            - page_name (str): the notebook page name. Must exist within _options in the notebook page class.
-            - associated_config (dict): dictionary containing string keys of config section names. Values are the
-                config's dictionary.
+            page_name (str): the notebook page name. Must exist within _options in the notebook page class.
+            associated_config (dict, optional): dictionary containing string keys of config section names. Values are
+                the config's dictionary. Default: empty dictionary.
 
         Notes:
             - The way that the notebook handles zarr arrays is special since they must not be kept in memory. To give
@@ -663,6 +647,8 @@ class NotebookPage:
                 zarr array is accessed in a page, it gives you the zarr.Array class, which can then be put into memory
                 as a numpy array when indexed.
         """
+        if associated_config is None:
+            associated_config = {}
         assert type(associated_config) is dict
         for key in associated_config:
             assert type(key) is str
@@ -748,8 +734,7 @@ class NotebookPage:
                 temp_directory = tempfile.TemporaryDirectory()
                 temp_zarr_path = os.path.join(temp_directory.name, f"{variable_name}.{suffix}")
                 temp_directories.append(temp_directory)
-                shutil.copytree(variable_path, temp_zarr_path)
-                shutil.rmtree(variable_path)
+                shutil.move(variable_path, temp_zarr_path)
                 if suffix == ".zarray":
                     self.__setattr__(variable_name, zarr.open_array(temp_zarr_path))
                 elif suffix == ".zgroup":
@@ -837,7 +822,7 @@ class NotebookPage:
         if not os.path.isfile(file_path):
             raise FileNotFoundError(f"Metadata file at {file_path} not found")
 
-        metadata: dict = None
+        metadata: dict[str, Any] = {}
         with open(file_path, "r") as file:
             metadata = json.loads(file.read())
             assert type(metadata) is dict
@@ -869,22 +854,16 @@ class NotebookPage:
             if type(value) is not zarr.Array:
                 raise PageTypeError(f"Variable {name} is of type {type(value)}, expected zarr.Array")
             old_path = os.path.abspath(value.store.path)
-            shutil.copytree(old_path, new_path)
+            shutil.move(old_path, new_path)
             new_array = zarr.open_array(store=new_path, mode="r+")
             new_array.read_only = True
-            if os.path.normpath(old_path) != os.path.normpath(new_path):
-                # Delete the old location of the zarr array.
-                shutil.rmtree(old_path)
             self.__setattr__(name, new_array)
         elif file_suffix == ".zgroup":
             if type(value) is not zarr.Group:
                 raise PageTypeError(f"Variable {name} is of type {type(value)}, expected zarr.Group")
             old_path = os.path.abspath(value.store.path)
-            shutil.copytree(old_path, new_path)
+            shutil.move(old_path, new_path)
             new_group = zarr.open_group(store=new_path, mode="r")
-            if os.path.normpath(old_path) != os.path.normpath(new_path):
-                # Delete the old location of the zarr array.
-                shutil.rmtree(old_path)
             self.__setattr__(name, new_group)
         else:
             raise NotImplementedError(f"File suffix {file_suffix} is not supported")
@@ -965,7 +944,7 @@ class NotebookPage:
         elif type_as_str == "tuple":
             return type(value) is tuple
         elif type_as_str.startswith("tuple"):
-            if not type(value) is tuple:
+            if type(value) is not tuple:
                 return False
             if len(value) == 0:
                 return True

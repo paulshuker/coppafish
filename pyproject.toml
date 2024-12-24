@@ -1,7 +1,25 @@
 [tool.black]
 line-length = 120
 
+[tool.isort]
+profile = "black"
+filter_files = true
+line_length = 120
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+exclude = [ "**/temp", "temp.py", "**/coppafish/docs/*.py", "**/.integration_dir", "**/.notebook_test", "**/__pycache__", "**/build/lib" ]
+select = [
+    # flake8-bugbear
+    "B",
+    # isort
+    "I",
+]
+ignore = ["E741", "B028", "B007"]
+
 [tool.pyright]
+exclude = [ "**/temp", "temp.py", "**/coppafish/docs/*.py", "**/.integration_dir", "**/.notebook_test", "**/__pycache__", "**/build/lib" ]
 typeCheckingMode = "off"
-# Fix relative importing resolves using pyright.
-executionEnvironments = {"root" = "src"}

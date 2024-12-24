@@ -1,25 +1,26 @@
 import enum
 import importlib.resources as importlib_resources
-from typing import Tuple
 import warnings
+from typing import Tuple
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Button, Slider
 import numpy as np
 import torch
+from matplotlib.widgets import Button, Slider
 
-from coppafish.omp import coefs
 from coppafish.omp import scores as omp_scores
+from coppafish.omp.pixel_scores import PixelScoreSolver
 from coppafish.plot.results_viewer.subplot import Subplot
-from coppafish.setup import config
+from coppafish.setup.config import Config
 from coppafish.setup.notebook import NotebookPage
 from coppafish.spot_colours import base as spot_colours_base
 
 
-class ViewOMPImage(Subplot):
+class ViewOMPPixelScoreImage(Subplot):
     class Options(enum.Enum):
-        COEFFICIENTS = enum.auto()
+        PIXEL_SCORES = enum.auto()
+        SCORES = enum.auto()
         ITERATIONS = enum.auto()
 
     def __init__(
@@ -40,7 +41,7 @@ class ViewOMPImage(Subplot):
         show: bool = True,
     ):
         """
-        Display omp coefficients around the local neighbourhood of a found spot position.
+        Display omp pixel scores around the local neighbourhood of a found spot position.
 
         Args:
             nbp_basic (NotebookPage): `basic_info` notebook page.
@@ -62,16 +63,20 @@ class ViewOMPImage(Subplot):
         """
         assert len(z_planes) > 3
         n_rounds_use, n_channels_use = len(nbp_basic.use_rounds), len(nbp_basic.use_channels)
-        min_intensity = config.get_default_for("omp", "minimum_intensity")
-        max_genes = config.get_default_for("omp", "max_genes")
-        dot_product_threshold = config.get_default_for("omp", "dot_product_threshold")
+        min_intensity = 0.0
+        alpha = Config.get_default_for("omp", "alpha")
+        beta = Config.get_default_for("omp", "beta")
+        max_genes = Config.get_default_for("omp", "max_genes")
+        dot_product_threshold = Config.get_default_for("omp", "dot_product_threshold")
         mean_spot_filepath = importlib_resources.files("coppafish.omp").joinpath("mean_spot.npy")
         mean_spot: np.ndarray = np.load(mean_spot_filepath).astype(np.float32)
         if nbp_omp is not None:
-            min_intensity = float(nbp_omp.associated_configs["omp"]["minimum_intensity"])
+            min_intensity = float(nbp_omp.results[f"tile_{spot_tile}"].attrs["minimum_intensity"])
+            alpha = float(nbp_omp.associated_configs["omp"]["alpha"])
+            beta = float(nbp_omp.associated_configs["omp"]["beta"])
             max_genes = int(nbp_omp.associated_configs["omp"]["max_genes"])
             dot_product_threshold = float(nbp_omp.associated_configs["omp"]["dot_product_threshold"])
-            mean_spot = nbp_omp.mean_spot
+            mean_spot = nbp_omp.mean_spot.astype(np.float32)
         yxz_min = local_yxz.copy() + np.array([-im_size, -im_size, min(z_planes)], int)
         yxz_max = local_yxz.copy() + np.array([im_size, im_size, max(z_planes)], int) + 1
         image_shape = tuple((yxz_max - yxz_min).tolist())
@@ -92,19 +97,21 @@ class ViewOMPImage(Subplot):
         )
         colours *= nbp_call_spots.colour_norm_factor[[spot_tile]].astype(np.float32)
         bled_codes = nbp_call_spots.bled_codes.astype(np.float32)
-        solver = coefs.CoefficientSolverOMP()
-        coefficients = solver.solve(
+        solver = PixelScoreSolver()
+        pixel_scores = solver.solve(
             colours,
             bled_codes,
             solver.create_background_bled_codes(n_rounds_use, n_channels_use),
             max_genes,
             dot_product_threshold,
             min_intensity,
+            alpha,
+            beta,
         )
         shape = image_shape + (-1,)
-        coefficients = coefficients.reshape(shape, order="F")
-        selectable_genes = set(((~np.isclose(coefficients, 0)).sum((0, 1, 2)) > 3).nonzero()[0].tolist())
-        iteration_counts = (~np.isclose(coefficients, 0)).sum(3)
+        pixel_scores = pixel_scores.reshape(shape, order="F")
+        selectable_genes = set(((~np.isclose(pixel_scores, 0)).sum((0, 1, 2)) > 3).nonzero()[0].tolist())
+        iteration_counts = (~np.isclose(pixel_scores, 0)).sum(3)
         self.method = method
         self.spot_no = spot_no
         self.z_planes = z_planes
@@ -113,12 +120,19 @@ class ViewOMPImage(Subplot):
         selectable_genes.add(self.spot_gene_no)
         self.selected_gene = spot_gene_no
         self.gene_names = nbp_call_spots.gene_names
-        coefficients = coefficients.transpose((3, 0, 1, 2))
-        self.coefficients = coefficients
+        pixel_scores = pixel_scores.transpose((3, 0, 1, 2))
+        self.pixel_scores = pixel_scores
         self.iteration_counts = iteration_counts
-        scores = omp_scores.score_coefficient_image(torch.from_numpy(coefficients), torch.from_numpy(mean_spot))[
-            :, image_shape[0] // 2, image_shape[1] // 2, image_shape[2] // 2
+        self.score_images = omp_scores.score_pixel_score_image(
+            torch.from_numpy(pixel_scores), torch.from_numpy(mean_spot)
+        )
+        # The score is boosted if close to the edge of the z stack.
+        scores = self.score_images[:, image_shape[0] // 2, image_shape[1] // 2, image_shape[2] // 2]
+        scores = scores[:, np.newaxis].repeat_interleave(len(nbp_basic.use_z), 1)
+        scores = omp_scores.boost_z_edge_spot_scores(scores[:, np.newaxis, np.newaxis], torch.from_numpy(mean_spot))[
+            :, 0, 0, local_yxz[2]
         ]
+
         self.scores = scores.numpy()
 
         self.fig, self.axes = plt.subplots(2, len(z_planes) + 1, height_ratios=(6, 1))
@@ -144,19 +158,28 @@ class ViewOMPImage(Subplot):
         self.gene_slider.on_changed(self.gene_selected_updated)
         self.button_colour = "red"
         self.button_colour_press = "green"
-        self.coef_button = Button(self.axes[1, 1], "Coefficients", hovercolor="0.275")
-        self.iter_count_button = Button(self.axes[1, 2], "Iteration Counts", hovercolor="0.275")
-        self.reset_gene_button = Button(self.axes[1, 3], "Spot Gene", hovercolor="0.275")
-        self.coef_button.on_clicked(self.pressed_coef_button)
+        self.pixel_score_button = Button(self.axes[1, 1], "Pixel Scores", hovercolor="0.275")
+        self.score_button = Button(self.axes[1, 2], "Final Scores", hovercolor="0.275")
+        z = local_yxz[2]
+        if (
+            min(z_planes) + z <= mean_spot.shape[2] // 2
+            or max(z_planes) + z >= nbp_basic.use_z[-1] - mean_spot.shape[2] // 2
+        ):
+            # TODO: Boost self.score_images correctly that are close to the edge of the z stack.
+            self.score_button.set_active(False)
+        self.iter_count_button = Button(self.axes[1, 3], "Iteration Counts", hovercolor="0.275")
+        self.reset_gene_button = Button(self.axes[1, 4], "Spot Gene", hovercolor="0.275")
+        self.pixel_score_button.on_clicked(self.pressed_pixel_score_button)
+        self.score_button.on_clicked(self.pressed_score_button)
         self.iter_count_button.on_clicked(self.pressed_iter_button)
         self.reset_gene_button.on_clicked(self.pressed_reset_gene)
-        self.pressed_coef_button()
+        self.pressed_pixel_score_button()
 
         if show:
             self.fig.show()
 
     def draw_data(self) -> None:
-        title = f"OMP {self.gene_names[self.selected_gene].item()} Coefficients end_msg"
+        title = f"OMP {self.gene_names[self.selected_gene].item()} Pixel Scores end_msg"
         if self.selected_button == self.Options.ITERATIONS:
             title = "OMP Iteration Counts"
         score_str = "{:.3f}".format(self.scores[self.selected_gene])
@@ -164,15 +187,17 @@ class ViewOMPImage(Subplot):
         self.fig.suptitle(title)
         data = []
         for k in range(len(self.z_planes)):
-            if self.selected_button == self.Options.COEFFICIENTS:
-                z_data = self.coefficients[self.selected_gene, :, :, k]
-                abs_max = self.coefficients.max()
+            if self.selected_button == self.Options.PIXEL_SCORES:
+                z_data = self.pixel_scores[self.selected_gene, :, :, k]
+                abs_max = np.abs(self.pixel_scores).max()
+            elif self.selected_button == self.Options.SCORES:
+                z_data = self.score_images[self.selected_gene, :, :, k]
             elif self.selected_button == self.Options.ITERATIONS:
                 z_data = self.iteration_counts[:, :, k]
             else:
                 raise ValueError(f"Unknown option: {self.selected_button}")
             data.append(z_data)
-        if self.selected_button != self.Options.COEFFICIENTS:
+        if self.selected_button != self.Options.PIXEL_SCORES:
             abs_max = np.max(np.abs(data.copy()))
         cmap = mpl.cm.seismic
         norm = mpl.colors.Normalize(vmin=-abs_max, vmax=abs_max)
@@ -195,7 +220,7 @@ class ViewOMPImage(Subplot):
                 linewidth=0.3,
             )
             if z_plane == 0:
-                ax.set_title(f"Central Plane")
+                ax.set_title("Central Plane")
             else:
                 ax.set_title(f"{'+' if z_plane > 0 else '-'}{abs(z_plane)}")
             im = ax.imshow(data[k], cmap=cmap, norm=norm, interpolation="nearest")
@@ -212,17 +237,27 @@ class ViewOMPImage(Subplot):
             return
         self.draw_data()
 
-    def pressed_coef_button(self, _=None) -> None:
-        self.selected_button = self.Options.COEFFICIENTS
+    def pressed_pixel_score_button(self, _=None) -> None:
+        self.selected_button = self.Options.PIXEL_SCORES
         self.draw_data()
-        self.coef_button.label.set_color(self.button_colour_press)
+        self.pixel_score_button.label.set_color(self.button_colour_press)
+        self.score_button.label.set_color(self.button_colour)
+        self.iter_count_button.label.set_color(self.button_colour)
+        self.gene_slider.set_active(True)
+
+    def pressed_score_button(self, _=None) -> None:
+        self.selected_button = self.Options.SCORES
+        self.draw_data()
+        self.pixel_score_button.label.set_color(self.button_colour)
+        self.score_button.label.set_color(self.button_colour_press)
         self.iter_count_button.label.set_color(self.button_colour)
         self.gene_slider.set_active(True)
 
     def pressed_iter_button(self, _=None) -> None:
         self.selected_button = self.Options.ITERATIONS
         self.draw_data()
-        self.coef_button.label.set_color(self.button_colour)
+        self.pixel_score_button.label.set_color(self.button_colour)
+        self.score_button.label.set_color(self.button_colour)
         self.iter_count_button.label.set_color(self.button_colour_press)
         self.gene_slider.set_active(False)
 

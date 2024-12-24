@@ -1,40 +1,54 @@
 import math as maths
 import os
-import time
+import pickle
 from typing import Tuple
 
 import numpy as np
-from tqdm import tqdm
 import zarr
+from tqdm import tqdm
 
-from .. import extract, log, utils
+from .. import log
 from ..filter import base as filter_base
 from ..filter import deconvolution
+from ..setup.config_section import ConfigSection
 from ..setup.notebook_page import NotebookPage
-from ..utils import indexing, tiles_io
+from ..utils import indexing, system, tiles_io
 
 
-def run_filter(config: dict, nbp_file: NotebookPage, nbp_basic: NotebookPage) -> Tuple[NotebookPage, NotebookPage]:
+def run_filter(
+    config: ConfigSection, nbp_file: NotebookPage, nbp_basic: NotebookPage
+) -> Tuple[NotebookPage, NotebookPage]:
     """
     Read in extracted raw images, filter them, then re-save in a different location.
 
     Args:
-        config (dict): dictionary obtained from 'filter' section of config file.
+        config (ConfigSection): config section obtained from 'filter' section of config file.
         nbp_file (NotebookPage): 'file_names' notebook page.
         nbp_basic (NotebookPage): 'basic_info' notebook page.
 
-    Returns:
+    Returns tuple containing:
         - NotebookPage: 'filter' notebook page.
         - NotebookPage: 'filter_debug' notebook page.
 
     Notes:
         - See `'filter'` and `'filter_debug'` sections of `notebook_page.py` file for description of variables.
     """
-    nbp = NotebookPage("filter", {"filter": config})
-    nbp_debug = NotebookPage("filter_debug", {"filter": config})
+    filter_config = {config.name: config.to_dict(), "version": {"0": system.get_software_version()}}
+    nbp = NotebookPage("filter", filter_config)
+    nbp_debug = NotebookPage("filter_debug", filter_config)
 
     log.debug("Filter started")
-    start_time = time.time()
+
+    # Remember the config values during a run.
+    last_config = filter_config.copy()
+    config_path = os.path.join(nbp_file.output_dir, "filter_last_config.pkl")
+    if os.path.isfile(config_path):
+        with open(config_path, "rb") as config_file:
+            last_config = pickle.load(config_file)
+    assert type(last_config) is dict
+    config_unchanged = filter_config == last_config
+    with open(config_path, "wb") as config_file:
+        pickle.dump(config, config_file)
 
     indices = indexing.create(
         nbp_basic,
@@ -47,7 +61,7 @@ def run_filter(config: dict, nbp_file: NotebookPage, nbp_basic: NotebookPage) ->
 
     max_ind = np.array(indices).max(0).tolist()
     shape = (max_ind[0] + 1, max_ind[1] + 1, max_ind[2] + 1, nbp_basic.tile_sz, nbp_basic.tile_sz, len(nbp_basic.use_z))
-    # Chunks are made into thin rods along the y direction as this is how the images are gathered in OMP.
+    # Chunks are made into thin rods along the y direction as this is how the images are later gathered in OMP.
     x_length = max(maths.floor(1e6 / (shape[1] * shape[3] * 2)), 1)
     z_length = 1
     while x_length > nbp_basic.tile_sz:
@@ -64,37 +78,34 @@ def run_filter(config: dict, nbp_file: NotebookPage, nbp_basic: NotebookPage) ->
         zarr_version=2,
         dtype=np.float16,
     )
+    if "completed_indices" not in images.attrs:
+        images.attrs["completed_indices"] = []
     # Bad trc images are filled with zeros.
     for t, r, c in nbp_basic.bad_trc:
         images[t, r, c] = 0
+        images.attrs["completed_indices"] = images.attrs["completed_indices"] + [(t, r, c)]
 
-    nbp_debug.r_dapi = config["r_dapi"]
+    wiener_filter = None
+    if not os.path.isfile(nbp_file.psf):
+        raise FileNotFoundError(f"Could not find the PSF at location {nbp_file.psf}")
 
-    if nbp_debug.r_dapi is not None:
-        filter_kernel_dapi = utils.strel.disk(nbp_debug.r_dapi)
-    else:
-        filter_kernel_dapi = None
+    # Put z to last index
+    psf = np.load(nbp_file.psf)["arr_0"].astype(np.float32).swapaxes(0, 2)
+    if np.max(psf.shape[:2]) < psf.shape[2]:
+        log.warn(f"The given PSF has a strange shape of yxz = {psf.shape}")
+    # Normalise psf so the min is 0 and the max is 1.
+    psf = psf - psf.min()
+    psf = psf / psf.max()
+    pad_im_shape = (
+        np.array([nbp_basic.tile_sz, nbp_basic.tile_sz, len(nbp_basic.use_z)])
+        + np.array(config["wiener_pad_shape"]) * 2
+    )
+    wiener_filter = filter_base.get_wiener_filter(psf, pad_im_shape, config["wiener_constant"])
+    nbp_debug.psf = psf
 
-    if config["deconvolve"]:
-        if not os.path.isfile(nbp_file.psf):
-            raise FileNotFoundError(f"Could not find the PSF at location {nbp_file.psf}")
-        else:
-            psf = np.moveaxis(np.load(nbp_file.psf)["arr_0"], 0, 2)  # Put z to last index
-        # normalise psf so min is 0 and max is 1.
-        psf = psf - psf.min()
-        psf = psf / psf.max()
-        pad_im_shape = (
-            np.array([nbp_basic.tile_sz, nbp_basic.tile_sz, len(nbp_basic.use_z)])
-            + np.array(config["wiener_pad_shape"]) * 2
-        )
-        wiener_filter = filter_base.get_wiener_filter(psf, pad_im_shape, config["wiener_constant"])
-        nbp_debug.psf = psf
-    else:
-        nbp_debug.psf = None
-
-    with tqdm(total=len(indices), desc=f"Filtering extract images") as pbar:
+    with tqdm(total=len(indices), desc="Filtering extract images") as pbar:
         for t, r, c in indices:
-            if not np.isnan(images[t, r, c]).any():
+            if config_unchanged and (t, r, c) in images.attrs["completed_indices"]:
                 # Already saved filtered images are not re-filtered.
                 pbar.update()
                 continue
@@ -102,32 +113,25 @@ def run_filter(config: dict, nbp_file: NotebookPage, nbp_basic: NotebookPage) ->
             raw_image_exists = tiles_io.image_exists(file_path_raw)
             pbar.set_postfix({"round": r, "tile": t, "channel": c})
             assert raw_image_exists, f"Raw, extracted file at\n\t{file_path_raw}\nnot found"
+
             # Get t, r, c image from raw files
-            im_raw = tiles_io._load_image(file_path_raw)[:]
-            im_filtered, bad_columns = extract.strip_hack(im_raw)  # check for faulty columns
-            if bad_columns.size > 0:
-                raise ValueError(f"Bad y column(s) were found during {t=}, {r=}, {c=} image filtering")
-            del im_raw
-            # Move to floating point before doing any filtering
+            im_filtered = tiles_io._load_image(file_path_raw)[:]
+            # Move to floating point before filtering.
             im_filtered = im_filtered.astype(np.float64)
-            if config["deconvolve"]:
-                # Deconvolves dapi images too
-                im_filtered = deconvolution.wiener_deconvolve(
-                    im_filtered, config["wiener_pad_shape"], wiener_filter, config["force_cpu"]
-                )
-            if c == nbp_basic.dapi_channel:
-                if filter_kernel_dapi is not None:
-                    im_filtered = utils.morphology.top_hat(im_filtered, filter_kernel_dapi)
-                # DAPI images are shifted so all negative pixels are now positive so they can be saved without clipping
-                im_filtered -= im_filtered.min()
+
+            # All images are deconvolved, including the DAPI.
+            im_filtered = deconvolution.wiener_deconvolve(
+                im_filtered, config["wiener_pad_shape"], wiener_filter, config["force_cpu"]
+            )
             im_filtered = im_filtered.astype(np.float16)
             images[t, r, c] = im_filtered
             del im_filtered
+            images.attrs["completed_indices"] = images.attrs["completed_indices"] + [(t, r, c)]
+
             pbar.update()
 
     nbp.images = images
-    end_time = time.time()
-    nbp_debug.time_taken = end_time - start_time
+    os.remove(config_path)
     log.debug("Filter complete")
 
     return nbp, nbp_debug

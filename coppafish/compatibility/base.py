@@ -1,28 +1,42 @@
 from collections import OrderedDict
 
+from .. import log
 from ..setup.notebook import Notebook
 from ..utils import system
-from .. import log
+
+# Each pipeline stage, this is slightly different to each coppafish page.
+STAGES: list[str] = [
+    "initialisation",
+    "extract",
+    "filter",
+    "find_spots",
+    "register",
+    "stitch",
+    "ref_spots",
+    "call_spots",
+    "omp",
+    "none",
+]
+# The page names associated with each stage. For multiple pages, they must be separated by a comma followed by a
+# space.
+PAGE_NAMES: tuple[str] = (
+    "basic_info and file_names",
+    "extract",
+    "filter and filter_debug",
+    "find_spots",
+    "register and register_debug",
+    "stitch",
+    "ref_spots",
+    "call_spots",
+    "omp",
+    "none",
+)
 
 
 class CompatibilityTracker:
-    # The page names associated with each stage. For multiple pages, they must be separated by a comma followed by a
-    # space.
-    _page_names: tuple[str] = (
-        "basic_info, file_names",
-        "extract",
-        "filter, filter_debug",
-        "find_spots",
-        "stitch",
-        "register, register_debug",
-        "ref_spots",
-        "call_spots",
-        "omp",
-        "none",
-    )
     # For each coppafish version, this is the earliest stage that requires re-running as a result of the changes is
     # given relative to the version before.
-    # !This must be appended to for each future version release.
+    # NOTE: This must be appended to for each future version release.
     _version_compatibility: OrderedDict[str, str] = OrderedDict(
         (
             ("0.10.6", "extract"),
@@ -31,60 +45,47 @@ class CompatibilityTracker:
             ("1.0.0", "initialisation"),
         )
     )
-    # Each pipeline stage, this is slightly different to each coppafish page.
-    _stages: list[str] = [
-        "initialisation",
-        "extract",
-        "filter",
-        "find_spots",
-        "register",
-        "stitch",
-        "ref_spots",
-        "call_spots",
-        "omp",
-        "none",
-    ]
-    # For each stage, explain how to remove all data during and after said stage.
+    # For each stage, instructions are given on how to remove all data during and after said stage.
     _stage_instructions: list[tuple[str]] = [
         (
-            "Clear the output directory, including the notebook",
+            "Clear the output directory. Delete the notebook",
             "Delete the 'extract' subdirectory inside of the 'tiles' directory",
         ),
         (
-            "Clear the output directory, including the notebook",
+            "Clear the output directory. Delete the notebook",
             "Delete the 'extract' subdirectory inside of the 'tiles' directory",
         ),
-        ("Clear the output directory, including the notebook",),
+        ("Clear the output directory. Delete the notebook",),
         (
-            "Clear the output directory except the notebook.",
-            f"Remove notebook pages {', '.join(_page_names[5:])}",
+            "Clear the output directory except the notebook",
+            f"Remove notebook page {PAGE_NAMES[3]} and all later pages",
         ),
         (
-            "Clear the output directory except the notebook.",
-            f"Remove notebook pages {', '.join(_page_names[6:])}",
+            "Clear the output directory except the notebook",
+            f"Remove notebook page {PAGE_NAMES[4]} and all later pages",
         ),
         (
-            "Clear the output directory except the notebook.",
-            f"Remove notebook pages {', '.join(_page_names[8:])}",
+            "Clear the output directory except the notebook",
+            f"Remove notebook page {PAGE_NAMES[5]} and all later pages",
         ),
         (
-            "Clear the output directory except the notebook.",
-            f"Remove notebook pages {', '.join(_page_names[9:])}",
+            "Clear the output directory except the notebook",
+            f"Remove notebook page {PAGE_NAMES[6]} and all later pages",
         ),
         (
-            "Clear the output directory except the notebook.",
-            f"Remove notebook pages {', '.join(_page_names[10:])}",
+            "Clear the output directory except the notebook",
+            f"Remove notebook page {PAGE_NAMES[7]} and all later pages",
         ),
         (
-            "Clear the output directory except the notebook.",
-            f"Remove notebook pages {', '.join(_page_names[11:])}",
+            "Clear the output directory except the notebook",
+            f"Remove notebook page {PAGE_NAMES[8]} and all later pages",
         ),
         ("Do nothing",),
     ]
 
     def __init__(self) -> None:
-        assert len(self._page_names) == len(self._stages)
-        assert len(self._stages) == len(self._stage_instructions)
+        assert len(PAGE_NAMES) == len(STAGES)
+        assert len(STAGES) == len(self._stage_instructions)
 
     def check(self, from_version: str, to_version: str) -> None:
         """
@@ -116,14 +117,14 @@ class CompatibilityTracker:
 
     def notebook_is_compatible(self, nb: Notebook) -> bool:
         """
-        Check if the notebook contains incompatible data from older software versions. If so, a warning is given and
+        Check if the notebook contains incompatible data from older software versions. If so, a warning is printed and
         false is returned.
 
         Args:
-            - nb (Notebook): the notebook.
+            nb (Notebook): the notebook.
 
         Returns:
-            (bool) valid: true if all notebook data is compatible.
+            (bool): valid. Whether all the notebook's data is compatible for this version of coppafish.
         """
         assert type(nb) is Notebook
 
@@ -141,23 +142,41 @@ class CompatibilityTracker:
                     f"The existing notebook contains backwards incompatibility on page {page_name} at version "
                     + f"{page_version} compared to current version {current_version}."
                 )
-                log.warn(f"The suggested course of action is:")
+                log.warn("The suggested course of action is:")
                 self.print_start_from(earliest_stage)
                 return False
         return self._check_notebook_for_downgrade(nb)
 
     def print_start_from(self, stage: str) -> None:
-        [log.info(f"    - {instruction}.") for instruction in self._stage_instructions[self._stages.index(stage)]]
+        """
+        Print the instructions on how to prepare the coppafish pipeline to start from the given stage.
+
+        Args:
+            stage (str): the stage to start again from.
+        """
+        [log.info(f"    - {instruction}.") for instruction in self._stage_instructions[STAGES.index(stage)]]
 
     def print_stage_names(self) -> None:
+        """
+        Print every stage that is part of coppafish's pipeline in chronological order.
+        """
         stage_names = []
-        for stage_name in self._stages:
+        for stage_name in STAGES:
             if stage_name == "none":
                 continue
             stage_names.append(stage_name)
         print(f"Coppafish stages: {', '.join(stage_names)}")
 
     def has_version(self, version: str) -> bool:
+        """
+        Check if a version exists in the tracker's records.
+
+        Args:
+            version (str): the version to look for.
+
+        Returns:
+            (bool): version_exists. Whether the version exists.
+        """
         return version in self._version_compatibility
 
     def _check_notebook_for_downgrade(self, nb: Notebook) -> bool:
@@ -181,7 +200,7 @@ class CompatibilityTracker:
                     f"Notebook contains page {page_name} run on version {page_version} which is higher than the "
                     + f"current coppafish version ({current_version})."
                 )
-                log.warn(f"The suggested course of action is:")
+                log.warn("The suggested course of action is:")
                 log.warn(f"    - Update coppafish version to >= {page_version} before re-running.")
                 return False
         return True
@@ -193,13 +212,13 @@ class CompatibilityTracker:
         earliest_stage_index = 999
         for index in range(index_start, index_end):
             stage = list(self._version_compatibility.values())[index]
-            index = self._stages.index(stage)
+            index = STAGES.index(stage)
             if index < earliest_stage_index:
                 earliest_stage = stage
                 earliest_stage_index = index
         return earliest_stage, earliest_stage_index
 
     def _get_stage_with_page_name(self, page_name: str) -> tuple[str, int]:
-        for i, page_names in enumerate(self._page_names):
-            if page_name in page_names.split(", "):
-                return self._stages[i], i
+        for i, page_names in enumerate(PAGE_NAMES):
+            if page_name in page_names.split(" and "):
+                return STAGES[i], i

@@ -1,19 +1,25 @@
-2024/mm/dd Version 1 Major Release (v1.0.0):
+2025/mm/dd Version 1 Major Release (v1.0.0):
  * General: Version 1.0.0 onwards automatically detects incompatible notebook versions. An automatic suggested course
     of action is given if a compatibility problem is found during runtime.
- * General: Presequence channels are no longer supported.
- * General: Many package updates.
+ * General: Pre-sequence channels are no longer supported.
  * General: Python 3.11 is now supported.
  * General: Python 3.9 is no longer supported.
+ * General: Many package updates.
  * General: All output variables are now stored within the notebook except for extract images, PDF diagnostics, and
     pipeline.log files.
- * General: The notebook is now faster at saving/loading, supports zarr arrays/groups, and has overwrite protection.
- * General: Better Command Line Interface (CLI).
+ * General: New system notification support for both pipeline crashes and completions.
+ * General: The notebook is now faster at saving and loading, supports zarr arrays/groups, and has overwrite protection.
+ * General: Better Command Line Interface (CLI) explained in the documentation.
  * General: Users can safely move the output directory and/or tiles directory mid-pipeline.
- * General: The notebook can be moved location without breaking software usage fix.
+ * General: The notebook can be moved location without breaking usages fix.
  * General: Incorrect numpy data types within the notebook fixed.
+ * General: New basic_info config parameters reverse_tile_positions_x and reverse_tile_positions_y to reverse the tile
+   positions if they are in the wrong places along x and/or y.
+ * General: Clearer config warnings/errors.
  * General: Security patches for zipp, urllib3, scikit-learn, tornado, requests, and certifi.
  * General: Package versions are now logged in the pipeline.log file.
+ * General: Numpy versions >=2.0, <2.1 now supported.
+ * General: Improved config parameter validation.
  * Documentation: New documentation for exporting data to pciSeq, skipping bad microscope images, running background
     processes, deleting notebook pages, and retrieving config data from the notebook.
  * Documentation: Detailed method description for find spots, stitch, call spots, and OMP.
@@ -29,11 +35,11 @@
     moved from `filter` to `extract`.
  * Filter: Images are now saved as float16 instead of uint16.
  * Filter: Images are now saved in the 'filter' notebook page.
- * Filter: Images are not multiplied by a scalar anymore.
- * Filter: The PSF used for image filtering is not computed anymore. It is a config input. There is a default PSF
-    saved at coppafish/setup/default_psf.npz.
+ * Filter: Images are no longer multiplied by a scalar.
+ * Filter: The PSF used for image filtering is no longer computed. It is a config input. There is a default PSF saved at
+    coppafish/setup/default_psf.npz.
  * Filter: Optimised zarr image chunking.
- * Filter: Removed legacy filter options: difference of Hanning and image smoothing.
+ * Filter: Removed legacy filter options: difference of Hanning, image smoothing, and dapi top hat filter.
  * Filter: Warning issues when a filtered image contains adjacent pixels at the maximum possible integer value.
  * Find spots: Automatic spot intensity threshold (nb.find_spots.auto_thresh) is now computed in find_spots, not filter.
  * Channel Register: Now done more thoroughly, with the bead images being shift corrected with a phase correlation
@@ -60,19 +66,22 @@
  * OMP: OMP is now truly orthogonal fix. Before, the new gene was weighted using only the residual pixel colour. Now,
     all genes are re-weighted using the full pixel colour and a new gene is found using the latest residual colour.
  * OMP: Gene assignment now uses a dot product with similar round contribution. This is identical to the anchor method
-    scoring. This score is now used for the final OMP coefficients instead of gene weightings.
- * OMP: A pixel is not run through OMP if its intensity is below minimum_intensity in the omp config (default 0.05). A
-    pixel's intensity is defined as `min over rounds (max over channels (I_rc))`, where I_rc is the pixel's image
+    scoring.
+ * OMP: OMP "coefficients" are now called "pixel scores" to differentiate them from gene weights.
+ * OMP: The final OMP pixel scores are found after gene weights are computed. Check the OMP method documentation for
+    details.
+ * OMP: A pixel is not run through OMP if its intensity is below minimum_intensity in the omp config (default 0.15). A
+    pixel's intensity is defined as `min over rounds (max over channels (|I_rc|))`, where I_rc is the pixel's image
     intensity in sequencing round r, sequencing channel c after image registration and after call spot scaling.
  * OMP: After each tile, OMP saves the progress and can continue where it left off.
  * OMP: Pixel colours are no longer background fitted before being run through OMP. OMP stops iterating on a pixel if a
-    background gene is assigned.
- * OMP: The OMP mean spot is fixed and no longer computed. It is less broad, leading to better results.
+    background gene is the next best assignment.
+ * OMP: The OMP mean spot is fixed and no longer computed. It is less broad, leading to improved spot scores.
  * OMP: Less memory intensive by saving each tile's results separately.
  * OMP: Results are now compressed.
  * OMP: New subplots for the Viewer. Press "h" to show all subplot shortcuts.
  * OMP: Faster compute times with and without cuda.
- * OMP: Robust memory usage.
+ * OMP: Better memory usage.
 
 
 2024/05/15 Alpha Update (v0.10.6):

@@ -5,22 +5,21 @@ import os
 import shutil
 import time
 from typing import Dict, List, Optional, Tuple, Union
-from typing_extensions import Self
 
 import dask
 import napari
 import numpy as np
-import numpy.typing as npt
 import pandas
 import scipy
 import tqdm
+from typing_extensions import Self
 
-from ..utils import base as utils_base
-from ..utils import errors as utils_errors
 from .. import log
 from ..omp import base as omp_base
 from ..pipeline import run
 from ..setup.notebook import Notebook
+from ..utils import base as utils_base
+from ..utils import errors as utils_errors
 
 
 # Originally created by Max Shinn, August 2023
@@ -66,22 +65,22 @@ class Robominnie:
         include_dapi: bool = True,
         tile_overlap: float = 0.125,
         seed: Union[int, None] = 1,
-    ) -> Self:
+    ) -> None:
         """
         Create an empty Robominnie instance to begin generating synthetic data for coppafish.
 
         Args:
-            - n_channels (int): the number of sequencing channels. Default: 5.
-            - n_rounds (int): the number of sequencing rounds. Default: 7.
-            - n_planes (int): the number of z planes. Default: 4.
-            - tile_sz (int): the number of pixels along x/y directions for a single tile. Default: 128.
-            - n_tiles_x (int): the number of tiles along the x direction. Default: 1.
-            - n_tiles_y (int): the number of tiles along the y direction. Default: 2.
-            - include_anchor (bool): include the anchor round and channel. Default: true.
-            - include_dapi (bool): include the dapi channel. Default: true.
-            - tile_overlap (float): the proportion of tile overlap in the x/y directions relative to the tile sizes.
+            n_channels (int): the number of sequencing channels. Default: 5.
+            n_rounds (int): the number of sequencing rounds. Default: 7.
+            n_planes (int): the number of z planes. Default: 4.
+            tile_sz (int): the number of pixels along x/y directions for a single tile. Default: 128.
+            n_tiles_x (int): the number of tiles along the x direction. Default: 1.
+            n_tiles_y (int): the number of tiles along the y direction. Default: 2.
+            include_anchor (bool): include the anchor round and channel. Default: true.
+            include_dapi (bool): include the dapi channel. Default: true.
+            tile_overlap (float): the proportion of tile overlap in the x/y directions relative to the tile sizes.
                 Default: 1/8 == 0.125.
-            - seed (int or none): the random generation seed. None to use a random seed every time. Default: 1.
+            seed (int or none): the random generation seed. None to use a random seed every time. Default: 1.
         """
         assert type(n_channels) is int
         assert n_channels > 1
@@ -177,7 +176,7 @@ class Robominnie:
             include_anchor (bool, optional): Superimpose on the anchor image. Default: true.
             include_dapi (bool, optional): Superimpose on the DAPI image. Default: true.
         """
-        print(f"Generating pink noise")
+        print("Generating pink noise")
 
         # True spatial scale should be maintained regardless of the image size, so we scale it as such.
         true_noise_spatial_scale = noise_spatial_scale * np.asarray(
@@ -209,11 +208,11 @@ class Robominnie:
     def add_spots(
         self,
         n_spots: Optional[int] = None,
-        bleed_matrix: npt.NDArray[np.float_] = None,
-        spot_size_pixels: npt.NDArray[np.float_] = None,
+        bleed_matrix: np.ndarray[float] = None,
+        spot_size_pixels: np.ndarray[float] = None,
         spot_amplitude: float = 1,
         include_dapi: bool = False,
-        spot_size_pixels_dapi: npt.NDArray[np.float_] = None,
+        spot_size_pixels_dapi: np.ndarray[float] = None,
         spot_amplitude_dapi: float = 1,
     ) -> Self:
         """
@@ -277,7 +276,7 @@ class Robominnie:
         ), f"Bleed matrix does not have n_channels={self.n_channels} as expected"
         assert spot_size_pixels.shape[0] == 3, "`spot_size_pixels` must be in three dimensions"
         if bleed_matrix.shape[0] != bleed_matrix.shape[1]:
-            log.warn(f"Given bleed matrix does not have equal channel and dye counts like usual")
+            log.warn("Given bleed matrix does not have equal channel and dye counts like usual")
         if self.bleed_matrix is None:
             self.bleed_matrix = bleed_matrix
         else:
@@ -369,7 +368,7 @@ class Robominnie:
 
         multiplier = (type_max - type_min) / (image_max - image_min)
         offset = type_max - multiplier * image_max
-        assert np.isclose(offset, type_min - multiplier * image_min), f"Oops"
+        assert np.isclose(offset, type_min - multiplier * image_min), "Oops"
         self.sequence_images *= multiplier
         self.sequence_images += offset
         self.sequence_images = self.sequence_images.astype(type)
@@ -402,7 +401,7 @@ class Robominnie:
         self.fit_images_to_type()
         self.bound_spots()
 
-        print(f"Saving raw data")
+        print("Saving raw data")
 
         self.tile_origins_yx, self.tile_yxz_pos = self._get_tile_bounds()[1:]
         self.image_tiles = self._unstitch_image(
@@ -478,15 +477,14 @@ class Robominnie:
             json.dump(metadata, f, indent=4)
 
         # Save the raw .npy tile files, one round at a time, in separate round directories. We do this because
-        # coppafish expects every rounds (including the anchor) in its own directory.
-        # Dask saves each tile as a separate .npy file for coppafish to read.
+        # coppafish expects every round (including the anchor) in its own directory.
+        # Dask saves each tile as a separate chunk for coppafish to read.
         dask_chunks = (1, self.n_channels + 1, self.tile_sz, self.tile_sz, self.n_planes)
         for r in range(self.n_rounds):
             save_path = os.path.join(output_dir, f"{r}")
             if not os.path.isdir(save_path):
                 os.mkdir(save_path)
-            # Clear the raw .npy directories before dask saving, so old multi-tile data is not left in the
-            # directories
+            # Clear the raw .npy directories before dask saving.
             for filename in os.listdir(save_path):
                 filepath = os.path.join(save_path, filename)
                 if os.path.isfile(filepath):
@@ -497,7 +495,7 @@ class Robominnie:
             dask.array.to_npy_stack(save_path, image_dask)
             del image_dask
         if self.include_anchor:
-            self.anchor_directory_name = f"anchor"
+            self.anchor_directory_name = "anchor"
             anchor_save_path = os.path.join(output_dir, self.anchor_directory_name)
             if not os.path.isdir(anchor_save_path):
                 os.mkdir(anchor_save_path)
@@ -548,7 +546,7 @@ class Robominnie:
         self.dye_names = list(self.dye_names)
 
         # Save the config file. z_subvols is moved from the default of 5 based on n_planes.
-        config_file_contents = f"""; This config file is auto-generated by RoboMinnie. 
+        config_file_contents = f"""; This config file is auto-generated by RoboMinnie.
         [file_names]
         input_dir = {output_dir}
         output_dir = {self.coppafish_output}
@@ -562,7 +560,7 @@ class Robominnie:
 
         [basic_info]
         is_3d = true
-        bad_trc = {", ".join([f"({bad_trc[0]}, {bad_trc[1]}, {bad_trc[2]})" for bad_trc in bad_trcs])}
+        bad_trc = {', '.join([f'{bad_trc[0]}, {bad_trc[1]}, {bad_trc[2]}' for bad_trc in bad_trcs])}
         dye_names = {', '.join(self.dye_names)}
         use_rounds = {', '.join([str(i) for i in range(self.n_rounds)])}
         use_z = {', '.join([str(i) for i in range(self.n_planes)])}
@@ -571,6 +569,9 @@ class Robominnie:
         use_channels = {', '.join([str(i) for i in np.arange((self.dapi_channel + 1), (self.n_channels + 1))])}
         anchor_channel = {self.anchor_channel if self.include_anchor else ''}
         dapi_channel = {self.dapi_channel if self.include_dapi else ''}
+
+        [notifications]
+        allow_notifications = false
 
         [extract]
         num_rotations = 0
@@ -594,9 +595,7 @@ class Robominnie:
         d_max = {", ".join(np.argmax(self.bleed_matrix, axis=1).astype(str))}
 
         [omp]
-        minimum_intensity = 0.2
-        spot_shape = 13, 13, 1
-        subset_pixels = 10_000
+        subset_pixels = {maths.floor(self.tile_sz * self.tile_sz * self.n_planes * 0.4)}
         """
         # Remove large spaces in the config contents
         config_file_contents = config_file_contents.replace("  ", "")
@@ -610,7 +609,7 @@ class Robominnie:
         Remove true spot positions when they are not within a tile. Any spot positions within a tile overlap are added
         multiple times, one for each tile. This is called when save_raw_data is called.
         """
-        print(f"Bounding spots... ", end="")
+        print("Bounding spots... ", end="")
         tile_bounds = self._get_tile_bounds()[0]
 
         bounded_true_spot_positions = np.zeros((0, 3), self.true_spot_positions.dtype)
@@ -640,7 +639,7 @@ class Robominnie:
         Returns:
             Notebook: final notebook.
         """
-        print(f"Running coppafish")
+        print("Running coppafish")
 
         config_filepath = self.config_filepath
         n_planes = self.n_planes
@@ -735,9 +734,10 @@ class Robominnie:
             assignments, FNs = utils_errors.compare_spots(
                 t_spot_positions, t_spot_gene_indices, t_truth_positions, t_truth_gene_indices, 2.0
             )
-            TPs = (assignments == 0).sum()
-            WPs = (assignments == 1).sum()
-            FPs = (assignments == 2).sum()
+            TPs = (assignments == 0).sum().item()
+            WPs = (assignments == 1).sum().item()
+            FPs = (assignments == 2).sum().item()
+            FNs = FNs.item()
             if method not in self.coppafish_spot_assignments:
                 self.coppafish_spot_assignments[method] = np.full(keep.size, -1, np.int8)
             self.coppafish_spot_assignments[method][keep] = assignments
@@ -793,9 +793,7 @@ class Robominnie:
             )
         napari.run()
 
-    def _unstitch_image(
-        self, image: npt.NDArray[np.float_], tile_size_yxz: npt.NDArray[np.int_]
-    ) -> npt.NDArray[np.float_]:
+    def _unstitch_image(self, image: np.ndarray[float], tile_size_yxz: np.ndarray[int]) -> np.ndarray[float]:
         """
         Cookie-cut the large images into multiple tiles with a tile overlap.
 

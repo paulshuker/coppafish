@@ -20,7 +20,7 @@ def check_n_spots(nb: Notebook):
     are the parameters which determine if warnings/errors will be raised.
 
     Args:
-        nb: *Notebook* containing `find_spots` page.
+        nb (Notebook): notebook up to and including the `find_spots` notebook page.
     """
     # TODO: show example of what error looks like in the docs
     config = nb.find_spots.associated_configs["find_spots"]
@@ -128,7 +128,7 @@ def check_n_spots(nb: Notebook):
 
     if len(error_message) > 0:
         error_message = (
-            error_message + f"\nThe function coppafish.plot.view_find_spots may be useful for "
-            f"investigating why the above tiles/rounds/channels had so few spots detected."
+            error_message + "\nThe command `python -m coppafish -fs /path/to/notebook` may be useful for "
+            "investigating why the above tiles/rounds/channels had so few spots detected."
         )
         log.error(ValueError(error_message))

@@ -4,12 +4,13 @@ import os
 from typing import Tuple
 
 import numpy as np
-from tqdm import tqdm
 import zarr
+from tqdm import tqdm
 
 from .. import log
-from ..register import preprocessing
 from ..register import base as register_base
+from ..register import preprocessing
+from ..setup.config_section import ConfigSection
 from ..setup.notebook_page import NotebookPage
 from ..spot_colours import base as spot_colours_base
 
@@ -19,7 +20,7 @@ def register(
     nbp_file: NotebookPage,
     nbp_filter: NotebookPage,
     nbp_find_spots: NotebookPage,
-    config: dict,
+    config: ConfigSection,
 ) -> Tuple[NotebookPage, NotebookPage]:
     """
     Registration pipeline. Returns register Notebook Page.
@@ -34,7 +35,7 @@ def register(
         nbp_file (NotebookPage): File Names notebook page.
         nbp_filter (NotebookPage): `filter` notebook page.
         nbp_find_spots (NotebookPage): Find Spots notebook page.
-        config: Register part of the config dictionary.
+        config (ConfigSection): Register part of the config.
 
     Returns:
         - nbp (NotebookPage): register notebook page.
@@ -51,8 +52,8 @@ def register(
     # Part 0: Initialisation
     # Initialise frequently used variables
     log.info("Register started")
-    nbp = NotebookPage("register", {"register": config})
-    nbp_debug = NotebookPage("register_debug", {"register": config})
+    nbp = NotebookPage("register", {config.name: config.to_dict()})
+    nbp_debug = NotebookPage("register_debug", {config.name: config.to_dict()})
     use_tiles, use_rounds, use_channels = (
         list(nbp_basic.use_tiles),
         list(nbp_basic.use_rounds),

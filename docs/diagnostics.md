@@ -2,9 +2,9 @@ Diagnostics specific to a method are found in the [method](find_spots.md) tab.
 
 ## Viewer
 
-The Viewer is the flagship way of viewing results. It is a fast, three-dimensional view of gene reads found during
-[call spots](overview.md#call-spots) and [OMP](overview.md#orthogonal-matching-pursuit). The application is run through
-[napari](https://github.com/napari/napari).
+The Viewer is the flagship diagnostic for viewing results. It is a fast, three-dimensional view of gene reads found
+during [call spots](overview.md#call-spots) and [OMP](overview.md#orthogonal-matching-pursuit). The application is
+powered by [napari](https://github.com/napari/napari).
 
 ### Opening
 
@@ -56,8 +56,8 @@ Viewer(nb, background_image="/path/to/custom/background_image.npy")
 
 The background image must be of shape `(im_y x im_x)` or `(im_z x im_y x im_x)` and can be a .npy file, a compressed
 .npz file with image at key `"arr_0"`, or a .tif file (based on package
-[tifffile](https://github.com/cgohlke/tifffile)). For further customisation, see the Viewer docstring in the
-[source code](https://github.com/paulshuker/coppafish/blob/HEAD/coppafish/plot/results_viewer/base.py).
+[tifffile](https://github.com/cgohlke/tifffile)). For further customisation, see the Viewer
+[docstring](https://github.com/paulshuker/coppafish/blob/HEAD/coppafish/plot/results_viewer/base.py).
 
 Close the Viewer and all subplots by pressing Ctrl + C in the terminal.
 
@@ -70,15 +70,17 @@ right click a gene to show only that type. Right click it again to show all gene
 For help with Viewer hotkeys, press h. This includes further diagnostic subplots in the Viewer. Some require a selected
 spot. Select a spot by pressing 3 and clicking on a spot. Press 4 to continue panning.
 
-The "Background Contrast" slider below the gene legend will affect the colour scale of the background image. "Marker
-Size" will change the size of gene spots. The "Z Thickness" allows for multiple z planes of genes to be displayed at
-once. Genes further away in z are smaller. The "Score Thresholds" allows the user to change the minimum and maximum
-scores to be displayed. The "Intensity Thresholds" affects the minimum allowed spot intensity to display (only affects
-Anchor and OMP). The "Method" is the chosen method of gene calling. "Probability" is the Von-Mises probability method,
-"Anchor" is the anchor method (see [call spots](overview.md#call-spots)), and "OMP" is the Orthogonal Matching Pursuit
-method (see [OMP](overview.md#orthogonal-matching-pursuit)).
+The "Background Contrast" slider will affect the colour scale of the background image. "Marker Size" will change the
+size of gene spots. "Z Thickness" allows for multiple z planes to be displayed at once. The "Score Thresholds" allows
+the user to change the minimum and maximum spot scores to display. The "Intensity Thresholds" affects the minimum and
+maximum allowed spot intensity to display The "Method" is the chosen method of gene calling. "Probability" is the Von-
+Mises probability method, "Anchor" is the anchor method (see [call spots](overview.md#call-spots)), and "OMP" is the
+Orthogonal Matching Pursuit method (see [OMP](overview.md#orthogonal-matching-pursuit)).
 
-![](images/Viewer_example.PNG "The Viewer")
+<figure markdown="span">
+  ![Image title](images/Viewer_example.PNG){ width="1100" }
+  <figcaption>The Viewer</figcaption>
+</figure>
 
 ## RegistrationViewer
 
@@ -114,19 +116,6 @@ The viewer is updated by typing commands in the terminal. To find out the availa
 
 ## Viewing images
 
-### Raw images
-
-Raw images for particular tiles, round, and channels can be viewed with access to `input_dir` given in the config file:
-
-```python
-from coppafish import Notebook, plot
-
-nb = Notebook("/path/to/notebook")
-plot.view_raw(nb, tiles, rounds, channels)
-```
-
-where `tiles`, `rounds`, and `channels` are lists of integers specifying which images to view.
-
 ### Extracted images
 
 Extracted images are identical to raw images, these are viewed by
@@ -149,8 +138,25 @@ Images after the [filter](overview.md#filter) stage are viewed by
 from coppafish import Notebook, plot
 
 nb = Notebook("/path/to/notebook")
-plot.view_filtered_images(nb, tiles, rounds, channels)
+plot.view_filtered_images(nb, tiles, rounds, channels, apply_colour_norm_factor=True, share_contrast_limits=True)
 ```
 
 where `tiles`, `rounds`, and `channels` are lists of integers specifying which images to view. Set these to `None` if
-you wish to view all of the them from the sequencing images.
+you wish to view all of the them from the sequencing images. The boolean parameters can be set to `False` if needed. You
+can also view the anchor round/channel. See `nb.basic_info.anchor_round` and `nb.basic_info.anchor_channel` for the
+indices.
+
+### Intensity images
+
+You can view the computed intensities once call spots is complete. Do this by
+
+```py
+from coppafish import Notebook, plot
+
+nb = Notebook("/path/to/notebook")
+plot.view_intensity_images(nb, tiles, z_planes=None)
+```
+
+`tiles` is a list of integers for each tile index to view. If set to `None`, the first tile is shown. When `z_planes` is
+`None`, the first 20 z planes are shown, you can choose to show more z planes by setting `z_planes` to any number > 20.
+The anchor images are also displayed for reference.

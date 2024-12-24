@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
 import napari
 import numpy as np
+from tqdm import tqdm
 
 from ...setup.notebook import Notebook
-from tqdm import tqdm
 
 
 def view_stitch_checkerboard(nb: Notebook):
@@ -19,7 +19,7 @@ def view_stitch_checkerboard(nb: Notebook):
     tile_origin = nb.stitch.tile_origin[use_tiles] - np.min(nb.stitch.tile_origin[use_tiles], axis=0)
 
     # get subset of pixels to load
-    mid_z, tile_size = nb.basic_info.nz // 2, nb.basic_info.tile_sz
+    mid_z = nb.basic_info.nz // 2
 
     # create napari viewer, load in tiles
     viewer = napari.Viewer()

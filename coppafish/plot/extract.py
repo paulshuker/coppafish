@@ -20,11 +20,11 @@ def view_extracted_images(
     View the unfiltered, extracted images.
 
     Args:
-        - nb (Notebook): notebook.
-        - config_path (str): file path to the config file.
-        - tiles (Optional[List[int]], optional): tiles to view. Default: all tiles.
-        - rounds (Optional[List[int]], optional): rounds to view. Default: all rounds.
-        - channels (Optional[List[int]], optional): channels to view. Default: all channels.
+        nb (Notebook): notebook.
+        config_path (str): file path to the config file.
+        tiles (List[int], optional): tiles to view. Default: all tiles.
+        rounds (List[int], optional): rounds to view. Default: all rounds.
+        channels (List[int], optional): channels to view. Default: all channels.
     """
     assert nb.has_page("extract"), "Extract must be run first"
 

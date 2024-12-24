@@ -6,19 +6,13 @@ re-run starting from an intermediate stage, you can delete all subsequent stages
 stages of coppafish you can re-run starting from, in chronological order, in the python terminal
 
 ```py
-from coppafish.utils import CompatibilityTracker
-
-tracker = CompatibilityTracker()
-tracker.print_stage_names()
+--8<-- "compatibility_tracker_stage_names.py"
 ```
 
 As an example, if you wished to know how to start from the stage "find_spots" again
 
 ```py
-from coppafish.utils import CompatibilityTracker
-
-tracker = CompatibilityTracker()
-tracker.print_start_from("find_spots")
+--8<-- "compatibility_tracker_start_from.py"
 ```
 
 and follow the instructions given. Then, you are safe to change the configuration for all sections after find spots. If
@@ -27,37 +21,35 @@ you are told to delete notebook page(s), see [here](#delete-notebook-page).
 ## Skipping bad microscope images
 
 You may have one or more images that are taken which are corrupted, empty, or not as bright as expected. When this
-happens, the user can manually tell coppafish to run without these images. To do this, specify each tile (`t`), round
-(`r`), channel (`c`) image by going to your custom config file and add the line
+happens, you can tell coppafish to run without these images. To do this, specify each tile (`t`), round (`r`), channel
+(`c`) image by going to your custom config file and add the line
 
-```
-bad_trc = (t1, r1, c1), (t2, r2, c2), ...
+```ini
+[basic_info]
+; Keep other options.
+bad_trc = t1, r1, c1, t2, r2, c2, ...
 ```
 
 under the `basic_info` section. Each set of brackets represents one image to ignore. This allows for meaningful
 results to be salvaged from an incomplete tile.
 
-## Exporting results for pciSeq
+## Export for pciSeq
 
 For probabilistic cell typing with [pciSeq](https://github.com/acycliq/pciSeq), you can export gene reads into a
 compatible csv file by
 
 ```py
-from coppafish import Notebook
-from coppafish.pciseq import export_to_pciseq
-
-nb = Notebook("/path/to/notebook")
-export_to_pciseq(nb, method)
+--8<-- "export_to_pciseq_0.py"
 ```
 
-where method can be "omp", "prob", or "anchor" for each gene calling method. To set a score and/or intensity minimum
-threshold,
+where method can be `"omp"`, `"prob"`, or `"anchor"` for each gene calling method. To set a score and/or intensity
+minimum threshold:
 
 ```py
-export_to_pciseq(nb, method, score_thresh, intensity_thresh)
+--8<-- "export_to_pciseq_1.py"
 ```
 
-where score_thresh and intensity_thresh are numbers. Use the [Viewer](diagnostics.md#viewer) to decide on thresholds.
+score_thresh and intensity_thresh must be numbers. Use the [Viewer](diagnostics.md#viewer) to help decide on thresholds.
 
 ## Create a background process
 
@@ -98,29 +90,24 @@ running.
 To remove a notebook page, in the python terminal
 
 ```py
-from coppafish import Notebook
-
-nb = Notebook("/path/to/notebook")
-nb.delete_page("page_name")
+--8<-- "nb_delete_page_0.py"
 ```
 
 For example, to remove the stitch page
 
 ```py
-from coppafish import Notebook
-
-nb = Notebook("/path/to/notebook")
-nb.delete_page("stitch")
+--8<-- "nb_delete_page_1.py"
 ```
 
-Any page's added after stitch are warned about. It is recommended to delete these pages as well by typing `y`.
+Any page's added after stitch are warned about. It is recommended to delete these pages as well by typing `y` then
+pressing enter.
 
 ## Email notification
 
 To be emailed when the pipeline crashes or finishes, under section `[notifications]` in the config, add the variable
 `email_me` with your email address. You must have a sender email with SMTP support, this email's credentials must be
 given in `[notifications]` under the variables `sender_email` and `sender_email_password`. The email may be flagged as
-junk or not be sent altogether, depending on the email address you are sending to. This has only been tested for an
+junk or not be sent altogether depending on the email address you are sending to. This has only been tested for an
 "outlook.com" Microsoft email.
 
 ## Generate gene codes
@@ -128,9 +115,7 @@ junk or not be sent altogether, depending on the email address you are sending t
 Generate gene codes automatically in the python terminal by
 
 ```py
-from coppafish.utils import reed_solomon_codes
-
-codes = reed_solomon_codes(n_gene_codes, n_rounds, n_channels)
+--8<-- "generate_gene_codes.py"
 ```
 
 where `n_gene_codes` is the number of gene codes desired, `n_rounds` is the number of sequencing rounds, and
@@ -144,8 +129,5 @@ Every notebook page has associated config section(s) saved to disk. You can look
 config section(s). For example, to see the associated config section(s) for the filter page, in the python terminal
 
 ```py
-from coppafish import Notebook
-
-nb = Notebook("path/to/notebook")
-nb.filter.associated_configs  # Dictionary of associated config sections.
+--8<-- "retrieve_notebook_config.py"
 ```

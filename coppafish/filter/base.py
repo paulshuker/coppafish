@@ -23,7 +23,7 @@ def central_tile(tilepos_yx: np.ndarray, use_tiles: List[int]) -> int:
 
 def get_wiener_filter(psf: np.ndarray, image_shape: Union[np.ndarray, List[int]], constant: float) -> np.ndarray:
     """
-    This tapers the psf so goes to 0 at edges and then computes wiener filter from it.
+    Taper the psf so it goes to 0 at the edges and then compute the Wiener filter from it.
 
     Args:
         psf: `float [y_diameter x x_diameter x z_diameter]`.

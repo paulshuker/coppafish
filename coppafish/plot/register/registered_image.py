@@ -27,11 +27,11 @@ def view_registered_images(
         - show (bool, optional): show the viewer after creating, used for unit testing purposes only. Default: true.
     """
     if type(nb) is not Notebook:
-        raise TypeError(f"nb must be a notebook")
+        raise TypeError("nb must be a notebook")
     if type(tile) is not int and tile is not None:
-        raise TypeError(f"tile must be an int")
+        raise TypeError("tile must be an int")
     if type(subset_limits_yxz) is not tuple and subset_limits_yxz is not None:
-        raise TypeError(f"tile must be an int")
+        raise TypeError("tile must be an int")
     if tile is None:
         tile: int = nb.basic_info.use_tiles[0]
     if subset_limits_yxz is None:

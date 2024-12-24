@@ -1,18 +1,18 @@
-from typing import Optional
 import warnings
+from typing import Optional
 
-from PyQt5.QtWidgets import QLabel, QLineEdit, QMainWindow, QPushButton, QSlider
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import napari
 import nd2
 import numpy as np
+import skimage
+import torch
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from PyQt5.QtWidgets import QLabel, QLineEdit, QMainWindow, QPushButton, QSlider
 from qtpy.QtCore import Qt
 from scipy.ndimage import affine_transform
 from scipy.spatial import KDTree
-import skimage
 from superqt import QRangeSlider
-import torch
 from tqdm import tqdm
 
 from coppafish.setup import file_names
@@ -854,7 +854,7 @@ def view_camera_correction(nb: Notebook, config_path: Optional[str] = None):
 
     # Transform the bead point clouds to the anchor frame of reference
     bead_point_clouds_transformed = []
-    for i in range(3):
+    for _ in range(3):
         points = np.hstack((bead_point_clouds[c], np.ones((bead_point_clouds[c].shape[0], 1))))
         affine = np.linalg.inv(np.vstack((transform[c], [0, 0, 1])))
         points_transformed = points @ affine.T
