@@ -318,6 +318,11 @@ class NotebookPage:
                 "float16 array (im_z x im_y x im_x). "
                 + "Fused large dapi image created by merging all tiles together after stitch shifting is applied.",
             ],
+            "anchor_image": [
+                "zarray[float16]",
+                "float16 array (im_z x im_y x im_x). "
+                + "Fused large anchor image created by merging all tiles together after stitch shifting is applied.",
+            ],
         },
         "register": {
             "flow": [

@@ -1,3 +1,8 @@
+2025/MM/DD Version 1 Major Patch (v1.2.0):
+ * Stitch: New large `anchor_image` added to notebook page. This can be used as a background image in the Viewer by
+    setting background_image="anchor" when opening the Viewer.
+
+
 2025/MM/DD Version 1 Patch (v1.1.0):
  * Documentation: Hyperlink and OMP method fixes.
  * Viewer: Can now middle mouse click a gene spot in the gene legend to toggle the gene colour on/off.

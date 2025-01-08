@@ -39,7 +39,16 @@ see [here](https://github.com/paulshuker/coppafisher/raw/HEAD/coppafisher/plot/r
 default gene marker file.
 
 You can specify a custom background image in the python terminal. The default is a dapi image over all tiles produced
-during stitch.
+during stitch. You can set the background image to `"anchor"` for an anchor image over all tiles instead.
+
+```py
+from coppafisher import Notebook, Viewer
+
+nb = Notebook("/path/to/notebook")
+Viewer(nb, background_image="anchor")
+```
+
+Or change it to any custom image.
 
 ```py
 from coppafisher import Notebook, Viewer

@@ -122,8 +122,8 @@ class Viewer:
             gene_legend_order_by (str, optional): how to order the genes in the legend. Use "row" to order genes row by
                 row in the gene marker file. "colour" will group genes based on their colourRGB's, each colour group is
                 sorted by hue. Each gene name in a colour group is sorted alphabetically. Default: "colour".
-            background_image (str or none, optional): what to use as the background image, can be none, "dapi" or a
-                file path to a .npy, .npz, or .tif file. The array at a file path must be a numpy array of shape
+            background_image (str or none, optional): what to use as the background image, can be none, "dapi", "anchor"
+                or a file path to a .npy, .npz, or .tif file. The array at a file path must be a numpy array of shape
                 `(im_y x im_x)` or `(im_z x im_y x im_x)` If a .npz file, the background image must be located at key
                 'arr_0'. Set to None for no background image. Default: "dapi".
             background_image_colour (str, optional): the napari colour mapping used for the background image. Default:
@@ -146,9 +146,17 @@ class Viewer:
             raise ValueError(f"gene_legend_order_by must be one of {self.legend_.order_by_options}")
         if background_image is not None and type(background_image) is not str:
             raise TypeError(f"background_image must be type str, got type {type(background_image)}")
-        if background_image is not None and background_image not in ("dapi",) and type(background_image) is not str:
-            raise ValueError(f"Unknown given background_image: {background_image} of type {type(background_image)}")
-        if type(background_image) is str and background_image not in ("dapi",) and not path.isfile(background_image):
+        if (
+            background_image is not None
+            and background_image not in ("dapi", "anchor")
+            and type(background_image) is not str
+        ):
+            raise ValueError(f"Unknown background_image: {background_image} of type {type(background_image)}")
+        if (
+            type(background_image) is str
+            and background_image not in ("dapi", "anchor")
+            and not path.isfile(background_image)
+        ):
             raise FileNotFoundError(f"No background_image file at {background_image}")
         assert type(nbp_basic) is NotebookPage or nbp_basic is None
         assert type(nbp_filter) is NotebookPage or nbp_filter is None
@@ -777,10 +785,13 @@ class Viewer:
         self.background_image = None
         self.background_image_layer = None
         self.max_intensity_project = False
-        if image is not None and image != "dapi" and not path.isfile(image):
+        if image is not None and image not in ("dapi", "anchor") and not path.isfile(image):
             raise FileNotFoundError(f"Cannot find background image at given file path: {image}")
         if image == "dapi":
             self.background_image = self.nbp_stitch.dapi_image[:]
+            self.background_image_layer = self.background_image
+        elif image == "anchor":
+            self.background_image = self.nbp_stitch.anchor_image[:]
             self.background_image_layer = self.background_image
         elif type(image) is str and image.endswith(".npy"):
             self.background_image: np.ndarray = np.load(image)
