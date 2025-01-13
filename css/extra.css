@@ -1,0 +1,6 @@
+.no-format a {
+    color: inherit;
+    /* Use the parent element's color */
+    text-decoration: none;
+    /* Remove underline */
+}
